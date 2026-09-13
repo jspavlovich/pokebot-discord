@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 data/
+seed-data.json
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal

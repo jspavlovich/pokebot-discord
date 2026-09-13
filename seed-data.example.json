@@ -1,0 +1,16 @@
+{
+  "roles": [
+    { "label": "North Hills Area", "roleId": "PUT_ROLE_ID_HERE" }
+  ],
+  "retailers": ["Target", "Best Buy"],
+  "neighborhoods": [
+    { "name": "McKnight", "role": "North Hills Area" },
+    { "name": "McCandless", "role": "North Hills Area" }
+  ],
+  "locations": [
+    { "retailer": "Target", "neighborhood": "McKnight" },
+    { "retailer": "Best Buy", "neighborhood": "McKnight" },
+    { "retailer": "Target", "neighborhood": "McCandless" },
+    { "retailer": "Best Buy", "neighborhood": "McCandless", "label": "McCandless (custom label example)" }
+  ]
+}

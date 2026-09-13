@@ -18,9 +18,18 @@ with room to grow into moderation, fun commands, and other integrations later.
 - A background sweep (every 15 minutes) finds threads still tagged **Active** whose 24h window
   has passed with no one confirming either way, posts a note, swaps the tag to **Expired**, and
   archives the thread.
-- `/sighting-role add|list` and `/sighting-location add|remove|list` (mod-only, requires Manage
-  Server) manage the role groups and retailer/location mappings — no code changes or redeploys
-  needed to add more of either.
+- `/sighting-role add|list` (mod-only) manages the role groups sightings can ping.
+- `/sighting-retailer add|remove|list` (mod-only) manages the catalog of retailers (Target,
+  Best Buy, ...) — a plain list, no role attached.
+- `/sighting-neighborhood add|remove|list` (mod-only) manages the catalog of neighborhoods
+  (McKnight, Cranberry, ...), each one mapped to exactly one role group.
+- `/sighting-location add|remove|list` (mod-only) combines a retailer + neighborhood into an
+  actual reportable location, e.g. Target + McKnight. Since retailer and neighborhood are both
+  picked from their catalogs (autocomplete, not free text), there's no way for spelling to drift
+  across entries — "Target" can never end up stored two different ways. The display label
+  defaults to `"Neighborhood - Retailer"` (e.g. "McKnight - Target") but can be overridden per
+  location if you want something more specific.
+- None of the above ever needs a code change or redeploy — it's all live admin commands.
 - `/config set-sightings-channel|show` (mod-only) points the bot at the forum channel to use.
 
 ## One-time Discord-side setup
@@ -46,12 +55,44 @@ Once it's running in your server:
 
 ```
 /sighting-role add label:"North Hills Area" role:@NorthHills-Alerts
-/sighting-location add retailer:Target name:mcknight label:"McKnight" role:"North Hills Area"
+/sighting-retailer add name:Target
+/sighting-neighborhood add name:McKnight role:"North Hills Area"
+/sighting-location add retailer:Target neighborhood:McKnight
 /config set-sightings-channel channel:#restock-sightings
 ```
 
-Repeat `/sighting-role add` and `/sighting-location add` for your other roles/locations, then
-`/sighting` is ready to use.
+Repeat for your other roles/retailers/neighborhoods/locations, then `/sighting` is ready to use.
+For loading a lot of these at once instead of one-by-one, see the seeding section below.
+
+## Bulk seeding
+
+Instead of running admin commands one at a time, edit a JSON file and load it all at once:
+
+```bash
+cp seed-data.example.json seed-data.json
+# edit seed-data.json with your real roles/retailers/neighborhoods/locations
+npm run seed
+```
+
+`seed-data.json` looks like:
+
+```json
+{
+  "roles": [{ "label": "North Hills Area", "roleId": "1234..." }],
+  "retailers": ["Target", "Best Buy"],
+  "neighborhoods": [{ "name": "McKnight", "role": "North Hills Area" }],
+  "locations": [
+    { "retailer": "Target", "neighborhood": "McKnight" },
+    { "retailer": "Best Buy", "neighborhood": "McKnight", "label": "McKnight (custom label)" }
+  ]
+}
+```
+
+It's an **upsert** — safe to edit and re-run anytime: new entries get added, changed
+labels/roles get updated, nothing gets duplicated. Locations missing a role/retailer/neighborhood
+get skipped with a warning rather than failing the whole run. `seed-data.json` itself is
+git-ignored (it may contain real role IDs specific to your server); `seed-data.example.json` is
+the tracked template.
 
 ## Deploying to Railway
 
@@ -74,7 +115,7 @@ Repeat `/sighting-role add` and `/sighting-location add` for your other roles/lo
 ```
 src/
   commands/       one file per slash command (data + execute + optional autocomplete)
-  services/       SQLite-backed data access (config, roles, locations, threads)
+  services/       SQLite-backed data access (config, roles, retailers, neighborhoods, locations, threads)
   handlers/       routes interactions (commands, autocomplete, buttons) to the right code
   jobs/           the 24h thread-expiry background sweep
   db/             schema + connection setup

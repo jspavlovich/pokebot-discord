@@ -9,8 +9,7 @@ import {
   ForumChannel,
   SlashCommandBuilder,
 } from 'discord.js';
-import { getLocation, listLocations, listRetailers } from '../services/locations';
-import { getRoleById } from '../services/roles';
+import { getLocationByNames, listLocations, listRetailersInUse } from '../services/locations';
 import { getSightingsChannelId } from '../services/config';
 import { createThreadRecord, findActiveThread, RETAG_WINDOW_MS, touchPing } from '../services/threads';
 
@@ -32,7 +31,7 @@ export async function autocomplete(interaction: AutocompleteInteraction) {
   const focused = interaction.options.getFocused(true);
 
   if (focused.name === 'retailer') {
-    const retailers = listRetailers(guildId).filter((r) =>
+    const retailers = listRetailersInUse(guildId).filter((r) =>
       r.toLowerCase().includes(focused.value.toLowerCase())
     );
     await interaction.respond(retailers.slice(0, 25).map((r) => ({ name: r, value: r })));
@@ -44,9 +43,9 @@ export async function autocomplete(interaction: AutocompleteInteraction) {
     const locations = listLocations(guildId, retailer).filter(
       (l) =>
         l.label.toLowerCase().includes(focused.value.toLowerCase()) ||
-        l.name.toLowerCase().includes(focused.value.toLowerCase())
+        l.neighborhood_name.toLowerCase().includes(focused.value.toLowerCase())
     );
-    await interaction.respond(locations.slice(0, 25).map((l) => ({ name: l.label, value: l.name })));
+    await interaction.respond(locations.slice(0, 25).map((l) => ({ name: l.label, value: l.neighborhood_name })));
   }
 }
 
@@ -58,14 +57,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   const retailer = interaction.options.getString('retailer', true);
-  const locationName = interaction.options.getString('location', true).toLowerCase();
+  const neighborhoodName = interaction.options.getString('location', true);
   const details = interaction.options.getString('details', true);
   const photo = interaction.options.getAttachment('photo');
 
-  const location = getLocation(guildId, retailer, locationName);
+  const location = getLocationByNames(guildId, retailer, neighborhoodName);
   if (!location) {
     await interaction.reply({
-      content: `I don't have a location called "${locationName}" for ${retailer}. Ask a mod to add it with \`/sighting-location add\`.`,
+      content: `I don't have a location called "${neighborhoodName}" for ${retailer}. Ask a mod to add it with \`/sighting-location add\`.`,
       ephemeral: true,
     });
     return;
@@ -90,8 +89,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
   const forum = channel as ForumChannel;
 
-  const role = getRoleById(location.role_id);
-  const roleMention = role ? `<@&${role.role_id}>` : '';
+  const roleMention = `<@&${location.discord_role_id}>`;
 
   await interaction.deferReply({ ephemeral: true });
 
@@ -127,10 +125,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const activeTag = forum.availableTags.find((t) => t.name.toLowerCase() === 'active');
 
   const newThread = await forum.threads.create({
-    name: `${retailer} — ${location.label}`,
+    name: location.label,
     appliedTags: activeTag ? [activeTag.id] : [],
     message: {
-      content: roleMention || undefined,
+      content: roleMention,
       embeds: [bodyEmbed],
       components: [clearButton],
     },
