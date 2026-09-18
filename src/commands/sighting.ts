@@ -11,7 +11,14 @@ import {
 } from 'discord.js';
 import { getLocationByNames, listLocations, listRetailersInUse } from '../services/locations';
 import { getSightingsChannelId } from '../services/config';
-import { createThreadRecord, findActiveThread, RETAG_WINDOW_MS, touchPing } from '../services/threads';
+import {
+  createThreadRecord,
+  findTodayThread,
+  formatThreadTitle,
+  reopenThread,
+  RETAG_WINDOW_MS,
+  touchPing,
+} from '../services/threads';
 
 export const data = new SlashCommandBuilder()
   .setName('sighting')
@@ -99,15 +106,25 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .setTimestamp(new Date());
   if (photo) bodyEmbed.setImage(photo.url);
 
-  const existing = findActiveThread(guildId, location.id);
+  const existing = findTodayThread(guildId, location.id);
 
-  if (existing) {
+  if (existing && (existing.status === 'active' || existing.status === 'cleared')) {
     const thread = await forum.threads.fetch(existing.thread_id).catch(() => null);
     if (!thread) {
       await interaction.editReply('Something went wrong finding the existing thread — please try again.');
       return;
     }
 
+    if (existing.status === 'cleared') {
+      reopenThread(existing.id);
+      const clearedTag = forum.availableTags.find((t) => t.name.toLowerCase() === 'cleared');
+      const activeTag = forum.availableTags.find((t) => t.name.toLowerCase() === 'active');
+      const remainingTags = thread.appliedTags.filter((t) => t !== clearedTag?.id);
+      await thread.setAppliedTags(activeTag ? [...remainingTags, activeTag.id] : remainingTags).catch(() => {});
+    }
+
+    // Reopening a cleared-today thread is treated like any other update to an active thread —
+    // it only re-pings the role if the normal throttle says a ping is due.
     const shouldRePing = Date.now() - existing.last_ping_at >= RETAG_WINDOW_MS;
     await thread.send({
       content: shouldRePing ? `🔔 New activity reported — worth checking again. ${roleMention}`.trim() : undefined,
@@ -123,9 +140,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     new ButtonBuilder().setCustomId('sighting-clear').setLabel('🚫 Mark as cleared').setStyle(ButtonStyle.Secondary)
   );
   const activeTag = forum.availableTags.find((t) => t.name.toLowerCase() === 'active');
+  const createdAt = Date.now();
 
   const newThread = await forum.threads.create({
-    name: location.label,
+    name: formatThreadTitle(location.label, createdAt),
     appliedTags: activeTag ? [activeTag.id] : [],
     message: {
       content: roleMention,
@@ -134,6 +152,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     },
   });
 
-  createThreadRecord(guildId, location.id, newThread.id);
+  createThreadRecord(guildId, location.id, newThread.id, createdAt);
   await interaction.editReply(`Created a new sightings thread: ${newThread.url}`);
 }
