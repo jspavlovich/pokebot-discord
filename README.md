@@ -18,6 +18,11 @@ with room to grow into moderation, fun commands, and other integrations later.
 - A background sweep (every 15 minutes) finds threads still tagged **Active** whose 24h window
   has passed with no one confirming either way, posts a note, swaps the tag to **Expired**, and
   archives the thread.
+- If someone reports a retailer/location combo that isn't in the catalog yet, the bot doesn't
+  block the report — it still posts a thread, tagged **Unmatched**, with the raw retailer/location
+  text in an embed. It won't ping anyone, dedupe, or expire on its own since there's no location
+  record backing it; a mod adds the location with `/sighting-location add` and re-tags the thread
+  to bring it into the normal flow.
 - `/sighting-role add|list` (mod-only) manages the role groups sightings can ping.
 - `/sighting-retailer add|remove|list` (mod-only) manages the catalog of retailers (Target,
   Best Buy, ...) — a plain list, no role attached.
@@ -35,9 +40,9 @@ with room to grow into moderation, fun commands, and other integrations later.
 ## One-time Discord-side setup
 
 1. Create a **Forum Channel** in your server for sightings (name it whatever you like).
-2. In that channel's settings → **Tags**, add three tags: **Active**, **Cleared**, **Expired**.
-   The bot looks these up by name — it does not create them for you (that would require an
-   extra `Manage Channels` permission we intentionally didn't grant it).
+2. In that channel's settings → **Tags**, add four tags: **Active**, **Cleared**, **Expired**,
+   **Unmatched**. The bot looks these up by name — it does not create them for you (that would
+   require an extra `Manage Channels` permission we intentionally didn't grant it).
 3. Make sure the bot has access to that channel (it inherits server-wide permissions from its
    invite by default, but double check if the channel has custom overrides).
 
