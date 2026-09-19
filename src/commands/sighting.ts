@@ -69,13 +69,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const photo = interaction.options.getAttachment('photo');
 
   const location = getLocationByNames(guildId, retailer, neighborhoodName);
-  if (!location) {
-    await interaction.reply({
-      content: `I don't have a location called "${neighborhoodName}" for ${retailer}. Ask a mod to add it with \`/sighting-location add\`.`,
-      ephemeral: true,
-    });
-    return;
-  }
 
   const channelId = getSightingsChannelId(guildId);
   if (!channelId) {
@@ -96,8 +89,6 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
   const forum = channel as ForumChannel;
 
-  const roleMention = `<@&${location.discord_role_id}>`;
-
   await interaction.deferReply({ ephemeral: true });
 
   const bodyEmbed = new EmbedBuilder()
@@ -105,6 +96,32 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .setFooter({ text: `Reported by ${interaction.user.tag}` })
     .setTimestamp(new Date());
   if (photo) bodyEmbed.setImage(photo.url);
+
+  if (!location) {
+    const unmatchedTag = forum.availableTags.find((t) => t.name.toLowerCase() === 'unmatched');
+    bodyEmbed.addFields(
+      { name: 'Retailer', value: retailer, inline: true },
+      { name: 'Location', value: neighborhoodName, inline: true }
+    );
+
+    const newThread = await forum.threads.create({
+      name: formatThreadTitle(`${retailer} - ${neighborhoodName}`, Date.now()),
+      appliedTags: unmatchedTag ? [unmatchedTag.id] : [],
+      message: {
+        content:
+          `⚠️ No location on file for **${retailer}** / **${neighborhoodName}** — a mod needs to add it with ` +
+          '`/sighting-location add`. This thread won\'t auto-update, dedupe, or ping anyone until that happens.',
+        embeds: [bodyEmbed],
+      },
+    });
+
+    await interaction.editReply(
+      `I don't have "${neighborhoodName}" for ${retailer} set up yet, so I posted it as unmatched: ${newThread.url}. A mod can add the location and take it from there.`
+    );
+    return;
+  }
+
+  const roleMention = `<@&${location.discord_role_id}>`;
 
   const existing = findTodayThread(guildId, location.id);
 
