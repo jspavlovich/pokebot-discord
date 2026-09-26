@@ -8,6 +8,8 @@ with room to grow into moderation, fun commands, and other integrations later.
 
 - `/sighting retailer:<autocomplete> location:<autocomplete> details:"text" photo:<optional>`
   looks up the location, finds or creates a forum thread for it, and pings the mapped role.
+- `/non-sightings retailer:<autocomplete> location:<autocomplete>` starts a new thread in the
+  configured non-sightings forum without applying tags or notifying a role.
 - If a thread for that location already exists and was created less than 24h ago, the new
   report is added as a reply instead of opening a duplicate. If it's been 3+ hours since the
   last ping in that thread, the role gets re-pinged; otherwise it's a quiet reply.
@@ -35,7 +37,8 @@ with room to grow into moderation, fun commands, and other integrations later.
   defaults to `"Neighborhood - Retailer"` (e.g. "McKnight - Target") but can be overridden per
   location if you want something more specific.
 - None of the above ever needs a code change or redeploy — it's all live admin commands.
-- `/config set-sightings-channel|show` (mod-only) points the bot at the forum channel to use.
+- `/config set-sightings-channel|set-non-sightings-channel|show` (mod-only) points the bot at the
+  forum channels to use.
 
 ## One-time Discord-side setup
 
@@ -88,7 +91,11 @@ npm run seed
   "neighborhoods": [{ "name": "McKnight", "role": "North Hills Area" }],
   "locations": [
     { "retailer": "Target", "neighborhood": "McKnight" },
-    { "retailer": "Best Buy", "neighborhood": "McKnight", "label": "McKnight (custom label)" }
+    {
+      "retailer": "Best Buy",
+      "neighborhood": "McKnight",
+      "label": "McKnight (custom label)"
+    }
   ]
 }
 ```
