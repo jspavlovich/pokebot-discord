@@ -1,12 +1,25 @@
 import {
+  ActionRowBuilder,
   AutocompleteInteraction,
   ChannelType,
   ChatInputCommandInteraction,
   ForumChannel,
+  ButtonBuilder,
+  ButtonStyle,
   SlashCommandBuilder,
 } from "discord.js";
-import { getNonSightingsChannelId } from "../services/config";
-import { listLocations, listRetailersInUse } from "../services/locations";
+import { getSightingsChannelId } from "../services/config";
+import {
+  getLocationByNames,
+  listLocations,
+  listRetailersInUse,
+} from "../services/locations";
+import {
+  createThreadRecord,
+  findTodayThread,
+  formatThreadTitle,
+  markCleared,
+} from "../services/threads";
 
 export const data = new SlashCommandBuilder()
   .setName("non-sightings")
@@ -53,12 +66,10 @@ export async function autocomplete(interaction: AutocompleteInteraction) {
           .includes(focused.value.toLowerCase()),
     );
     await interaction.respond(
-      locations
-        .slice(0, 25)
-        .map((location) => ({
-          name: location.label,
-          value: location.neighborhood_name,
-        })),
+      locations.slice(0, 25).map((location) => ({
+        name: location.label,
+        value: location.neighborhood_name,
+      })),
     );
   }
 }
@@ -74,12 +85,22 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   const retailer = interaction.options.getString("retailer", true);
-  const location = interaction.options.getString("location", true);
-  const channelId = getNonSightingsChannelId(guildId);
+  const neighborhoodName = interaction.options.getString("location", true);
+  const location = getLocationByNames(guildId, retailer, neighborhoodName);
+  if (!location) {
+    await interaction.reply({
+      content:
+        "That retailer and location aren't configured. Please select them from the autocomplete options.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const channelId = getSightingsChannelId(guildId);
   if (!channelId) {
     await interaction.reply({
       content:
-        "Non-sightings channel isn't configured yet. Ask a mod to run `/config set-non-sightings-channel`.",
+        "Sightings channel isn't configured yet. Ask a mod to run `/config set-sightings-channel`.",
       ephemeral: true,
     });
     return;
@@ -91,17 +112,73 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   if (!channel || channel.type !== ChannelType.GuildForum) {
     await interaction.reply({
       content:
-        "The configured non-sightings channel is missing or isn't a forum channel. Ask a mod to check `/config show`.",
+        "The configured sightings channel is missing or isn't a forum channel. Ask a mod to check `/config show`.",
       ephemeral: true,
     });
     return;
   }
 
   await interaction.deferReply({ ephemeral: true });
-  const title = `${retailer} - ${location}`.slice(0, 100);
-  const thread = await (channel as ForumChannel).threads.create({
-    name: title,
-    message: { content: `Non-sighting reported by ${interaction.user.tag}.` },
+  const forum = channel as ForumChannel;
+  const existing = findTodayThread(guildId, location.id);
+  const clearedTag = forum.availableTags.find(
+    (tag) => tag.name.toLowerCase() === "cleared",
+  );
+  const activeTag = forum.availableTags.find(
+    (tag) => tag.name.toLowerCase() === "active",
+  );
+  const expiredTag = forum.availableTags.find(
+    (tag) => tag.name.toLowerCase() === "expired",
+  );
+  const clearButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("sighting-clear")
+      .setLabel("🚫 Mark as cleared")
+      .setStyle(ButtonStyle.Secondary),
+  );
+  const content = `🚫 No stock reported by ${interaction.user.tag}.`;
+  const allowedMentions = { parse: [] as const };
+
+  if (existing) {
+    const thread = await forum.threads
+      .fetch(existing.thread_id)
+      .catch(() => null);
+    if (!thread) {
+      await interaction.editReply(
+        "Something went wrong finding the existing thread. Please try again.",
+      );
+      return;
+    }
+
+    if (thread.archived) await thread.setArchived(false);
+    const remainingTags = thread.appliedTags.filter(
+      (tagId) =>
+        tagId !== activeTag?.id &&
+        tagId !== expiredTag?.id &&
+        tagId !== clearedTag?.id,
+    );
+    await thread.setAppliedTags(
+      clearedTag ? [...remainingTags, clearedTag.id] : remainingTags,
+    );
+    await thread.send({ content, allowedMentions });
+    markCleared(existing.id);
+    await interaction.editReply(
+      `Marked the existing location thread as cleared: ${thread.url}`,
+    );
+    return;
+  }
+
+  const createdAt = Date.now();
+  const thread = await forum.threads.create({
+    name: formatThreadTitle(location.label, createdAt),
+    appliedTags: clearedTag ? [clearedTag.id] : [],
+    message: { content, components: [clearButton], allowedMentions },
   });
-  await interaction.editReply(`Created a non-sightings thread: ${thread.url}`);
+  createThreadRecord(guildId, location.id, thread.id, createdAt, {
+    status: "cleared",
+    lastPingAt: 0,
+  });
+  await interaction.editReply(
+    `Created a cleared thread for ${location.label}: ${thread.url}`,
+  );
 }

@@ -1,7 +1,11 @@
-import { db } from '../db';
-import { formatEasternShortDate, startOfEasternDay, startOfNextEasternDay } from '../util/date';
+import { db } from "../db";
+import {
+  formatEasternShortDate,
+  startOfEasternDay,
+  startOfNextEasternDay,
+} from "../util/date";
 
-export type ThreadStatus = 'active' | 'cleared' | 'expired';
+export type ThreadStatus = "active" | "cleared" | "expired";
 
 export interface ThreadRow {
   id: number;
@@ -34,13 +38,16 @@ export function formatThreadTitle(label: string, createdAt: number): string {
  * status. Callers decide what to do with it: reuse it if active, reopen it if cleared. A thread
  * from any earlier day is never reused, even if this returns undefined because none exists yet.
  */
-export function findTodayThread(guildId: string, locationId: number): ThreadRow | undefined {
+export function findTodayThread(
+  guildId: string,
+  locationId: number,
+): ThreadRow | undefined {
   const todayStart = startOfEasternDay(Date.now());
   return db
     .prepare(
       `SELECT * FROM sighting_threads
        WHERE guild_id = ? AND location_id = ? AND created_at >= ?
-       ORDER BY created_at DESC LIMIT 1`
+       ORDER BY created_at DESC LIMIT 1`,
     )
     .get(guildId, locationId, todayStart) as ThreadRow | undefined;
 }
@@ -49,35 +56,51 @@ export function createThreadRecord(
   guildId: string,
   locationId: number,
   threadId: string,
-  createdAt: number = Date.now()
+  createdAt: number = Date.now(),
+  options: { status?: ThreadStatus; lastPingAt?: number } = {},
 ): ThreadRow {
+  const status = options.status ?? "active";
+  const lastPingAt = options.lastPingAt ?? createdAt;
   const info = db
     .prepare(
       `INSERT INTO sighting_threads (guild_id, location_id, thread_id, status, created_at, last_ping_at)
-       VALUES (?, ?, ?, 'active', ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(guildId, locationId, threadId, createdAt, createdAt);
-  return db.prepare('SELECT * FROM sighting_threads WHERE id = ?').get(info.lastInsertRowid) as ThreadRow;
+    .run(guildId, locationId, threadId, status, createdAt, lastPingAt);
+  return db
+    .prepare("SELECT * FROM sighting_threads WHERE id = ?")
+    .get(info.lastInsertRowid) as ThreadRow;
 }
 
 export function touchPing(threadRowId: number, at: number = Date.now()): void {
-  db.prepare('UPDATE sighting_threads SET last_ping_at = ? WHERE id = ?').run(at, threadRowId);
+  db.prepare("UPDATE sighting_threads SET last_ping_at = ? WHERE id = ?").run(
+    at,
+    threadRowId,
+  );
 }
 
 export function markCleared(threadRowId: number): void {
-  db.prepare(`UPDATE sighting_threads SET status = 'cleared' WHERE id = ?`).run(threadRowId);
+  db.prepare(`UPDATE sighting_threads SET status = 'cleared' WHERE id = ?`).run(
+    threadRowId,
+  );
 }
 
 export function reopenThread(threadRowId: number): void {
-  db.prepare(`UPDATE sighting_threads SET status = 'active' WHERE id = ?`).run(threadRowId);
+  db.prepare(`UPDATE sighting_threads SET status = 'active' WHERE id = ?`).run(
+    threadRowId,
+  );
 }
 
 export function markExpired(threadRowId: number): void {
-  db.prepare(`UPDATE sighting_threads SET status = 'expired' WHERE id = ?`).run(threadRowId);
+  db.prepare(`UPDATE sighting_threads SET status = 'expired' WHERE id = ?`).run(
+    threadRowId,
+  );
 }
 
 export function getThreadByThreadId(threadId: string): ThreadRow | undefined {
-  return db.prepare('SELECT * FROM sighting_threads WHERE thread_id = ?').get(threadId) as ThreadRow | undefined;
+  return db
+    .prepare("SELECT * FROM sighting_threads WHERE thread_id = ?")
+    .get(threadId) as ThreadRow | undefined;
 }
 
 /**
@@ -88,7 +111,9 @@ export function getThreadByThreadId(threadId: string): ThreadRow | undefined {
 export function findThreadsFromPastDays(): ThreadRow[] {
   const todayStart = startOfEasternDay(Date.now());
   return db
-    .prepare(`SELECT * FROM sighting_threads WHERE status = 'active' AND created_at < ?`)
+    .prepare(
+      `SELECT * FROM sighting_threads WHERE status = 'active' AND created_at < ?`,
+    )
     .all(todayStart) as ThreadRow[];
 }
 

@@ -8,15 +8,15 @@ with room to grow into moderation, fun commands, and other integrations later.
 
 - `/sighting retailer:<autocomplete> location:<autocomplete> details:"text" photo:<optional>`
   looks up the location, finds or creates a forum thread for it, and pings the mapped role.
-- `/non-sightings retailer:<autocomplete> location:<autocomplete>` starts a new thread in the
-  configured non-sightings forum without applying tags or notifying a role.
-- If a thread for that location already exists and was created less than 24h ago, the new
-  report is added as a reply instead of opening a duplicate. If it's been 3+ hours since the
-  last ping in that thread, the role gets re-pinged; otherwise it's a quiet reply.
+- `/non-sightings retailer:<autocomplete> location:<autocomplete>` uses the sightings forum
+  thread for that location, posts a no-stock update, and marks the thread **Cleared** without
+  notifying a role. If there is no thread for the current day, it creates one already marked
+  **Cleared**, also without a role notification.
+- Sightings for the same location on the current Eastern calendar day are added to that thread.
+  If it's been 3+ hours since the last ping, the role gets re-pinged; otherwise it's a quiet reply.
 - Every thread's starter message has a **🚫 Mark as cleared** button anyone can click, which
-  posts a notice and swaps the thread's forum tag to **Cleared**. A cleared thread is excluded
-  from reuse, so a fresh report at that location later the same day opens a brand-new thread
-  with a full ping instead of getting buried.
+  posts a notice and swaps the thread's forum tag to **Cleared**. A later sighting the same day
+  reopens the thread and follows the normal role ping throttle.
 - A background sweep (every 15 minutes) finds threads still tagged **Active** whose 24h window
   has passed with no one confirming either way, posts a note, swaps the tag to **Expired**, and
   archives the thread.
@@ -37,8 +37,7 @@ with room to grow into moderation, fun commands, and other integrations later.
   defaults to `"Neighborhood - Retailer"` (e.g. "McKnight - Target") but can be overridden per
   location if you want something more specific.
 - None of the above ever needs a code change or redeploy — it's all live admin commands.
-- `/config set-sightings-channel|set-non-sightings-channel|show` (mod-only) points the bot at the
-  forum channels to use.
+- `/config set-sightings-channel|show` (mod-only) points the bot at the forum channel to use.
 
 ## One-time Discord-side setup
 
