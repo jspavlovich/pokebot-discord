@@ -1,7 +1,7 @@
-import Database from 'better-sqlite3';
-import fs from 'node:fs';
-import path from 'node:path';
-import { config } from '../config';
+import Database from "better-sqlite3";
+import fs from "node:fs";
+import path from "node:path";
+import { config } from "../config";
 
 const dir = path.dirname(config.databasePath);
 if (!fs.existsSync(dir)) {
@@ -9,11 +9,11 @@ if (!fs.existsSync(dir)) {
 }
 
 export const db = new Database(config.databasePath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
 
-const SCHEMA_VERSION = 4;
-const currentVersion = db.pragma('user_version', { simple: true }) as number;
+const SCHEMA_VERSION = 5;
+const currentVersion = db.pragma("user_version", { simple: true }) as number;
 
 // v2: retailer / location name / role label need case-insensitive matching (COLLATE NOCASE)
 // so "Target" and "target" resolve to the same row instead of silently fragmenting into two.
@@ -47,7 +47,8 @@ if (currentVersion < 2) {
 db.exec(`
 CREATE TABLE IF NOT EXISTS guild_config (
   guild_id TEXT PRIMARY KEY,
-  sightings_channel_id TEXT
+  sightings_channel_id TEXT,
+  non_sightings_channel_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS roles (
@@ -95,5 +96,16 @@ CREATE TABLE IF NOT EXISTS sighting_threads (
 CREATE INDEX IF NOT EXISTS idx_threads_lookup
   ON sighting_threads (guild_id, location_id, status, created_at);
 `);
+
+const guildConfigColumns = db.pragma("table_info(guild_config)") as {
+  name: string;
+}[];
+if (
+  !guildConfigColumns.some(
+    (column) => column.name === "non_sightings_channel_id",
+  )
+) {
+  db.exec("ALTER TABLE guild_config ADD COLUMN non_sightings_channel_id TEXT");
+}
 
 db.pragma(`user_version = ${SCHEMA_VERSION}`);
