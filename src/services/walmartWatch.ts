@@ -15,12 +15,6 @@ export interface WalmartDrawRow {
   created_at: number;
 }
 
-/** Whether the table has ever been populated — used to detect the first poll after deploy. */
-export function hasSeenAnyItems(): boolean {
-  const row = db.prepare("SELECT 1 FROM walmart_seen_items LIMIT 1").get();
-  return row !== undefined;
-}
-
 export function getSeenItemIds(): Set<string> {
   const rows = db
     .prepare("SELECT item_id FROM walmart_seen_items")

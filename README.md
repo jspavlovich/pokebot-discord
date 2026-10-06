@@ -52,8 +52,8 @@ with room to grow into moderation, fun commands, and other integrations later.
   new thread. The thread body pings the configured role, then lists the item names plus a link
   to the drawing page — entries aren't purchasable individually, you enter the drawing from that
   one page.
-- First deploy baselines whatever's currently listed as "already seen" without posting, so
-  turning this on doesn't flood the channel with every item already on the page.
+- The very first poll treats everything currently on the page as new and posts it — nothing is
+  silently baselined. After that, only items that weren't there on a previous poll get alerted.
 - `/config set-walmart-channel|show` (mod-only) points the bot at the forum channel to post
   drawing alerts into (an existing forum channel — the bot doesn't create or tag it).
 - `/config set-walmart-role` (mod-only, optional) sets the role pinged in each drawing post.

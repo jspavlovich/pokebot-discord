@@ -4,7 +4,6 @@ import {
   createDrawThreadRecord,
   findDrawThread,
   getSeenItemIds,
-  hasSeenAnyItems,
   markItemsSeen,
   WalmartSeenItem,
 } from '../services/walmartWatch';
@@ -54,13 +53,6 @@ async function runPoll(client: Client) {
       .filter(isPokemonBranded)
       .map(toSeenItem)
       .filter((item): item is WalmartSeenItem => item !== null);
-
-    if (!hasSeenAnyItems()) {
-      // First poll after deploy: baseline everything currently listed as seen without alerting —
-      // otherwise the first real poll floods every configured channel with the whole shelf.
-      markItemsSeen(pokemonItems);
-      return;
-    }
 
     const seenIds = getSeenItemIds();
     const newItems = pokemonItems.filter((item) => !seenIds.has(item.itemId));
