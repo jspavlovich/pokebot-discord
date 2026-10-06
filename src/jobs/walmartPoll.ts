@@ -58,6 +58,15 @@ async function runPoll(client: Client) {
     const newItems = pokemonItems.filter((item) => !seenIds.has(item.itemId));
     if (newItems.length === 0) return;
 
+    const channels = listWalmartAlertsChannels();
+    if (channels.length === 0) {
+      // Nowhere to post yet (e.g. right after a fresh deploy, before /config
+      // set-walmart-channel has been run) — leave these unseen rather than marking them,
+      // so they're still picked up and posted once a channel is configured instead of being
+      // silently consumed by whichever poll happens to run first.
+      return;
+    }
+
     const byDrawKey = new Map<string, WalmartSeenItem[]>();
     for (const item of newItems) {
       const group = byDrawKey.get(item.drawKey) ?? [];
@@ -65,7 +74,7 @@ async function runPoll(client: Client) {
       byDrawKey.set(item.drawKey, group);
     }
 
-    for (const { guildId, channelId, roleId } of listWalmartAlertsChannels()) {
+    for (const { guildId, channelId, roleId } of channels) {
       await postNewDrawItems(client, guildId, channelId, roleId, byDrawKey);
     }
 
