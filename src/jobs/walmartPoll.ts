@@ -45,8 +45,33 @@ interface RawProduct {
 }
 
 export function startWalmartPoll(client: Client) {
-  runPoll(client);
-  setInterval(() => runPoll(client), POLL_INTERVAL_MS);
+  requestPoll(client);
+  setInterval(() => requestPoll(client), POLL_INTERVAL_MS);
+}
+
+let activePoll: Promise<void> | null = null;
+let rerunQueued = false;
+
+/**
+ * Runs a poll, coalescing any requests that come in while one is already in flight into a single
+ * follow-up run afterward — rather than letting them start a second, overlapping runPoll. Without
+ * this, the hourly setInterval tick and a debounced triggerWalmartPoll (or two of either) could run
+ * concurrently: both would read the same "seen" snapshot and, for a drawing neither has a thread for
+ * yet, both call forum.threads.create, leaving two threads for one drawing with the second DB write
+ * orphaning the first.
+ */
+function requestPoll(client: Client): void {
+  if (activePoll) {
+    rerunQueued = true;
+    return;
+  }
+  activePoll = runPoll(client).finally(() => {
+    activePoll = null;
+    if (rerunQueued) {
+      rerunQueued = false;
+      requestPoll(client);
+    }
+  });
 }
 
 let pendingTrigger: NodeJS.Timeout | null = null;
@@ -65,7 +90,7 @@ export function triggerWalmartPoll(client: Client): void {
   if (pendingTrigger) clearTimeout(pendingTrigger);
   pendingTrigger = setTimeout(() => {
     pendingTrigger = null;
-    runPoll(client);
+    requestPoll(client);
   }, TRIGGER_DEBOUNCE_MS);
 }
 
@@ -101,23 +126,34 @@ async function runPoll(client: Client) {
       byDrawKey.set(item.drawKey, group);
     }
 
+    const failedDrawKeys = new Set<string>();
     for (const { guildId, channelId, roleId } of channels) {
-      await postNewDrawItems(client, guildId, channelId, roleId, byDrawKey);
+      const failed = await postNewDrawItems(client, guildId, channelId, roleId, byDrawKey);
+      for (const drawKey of failed) failedDrawKeys.add(drawKey);
     }
 
-    markItemsSeen(newItems);
+    // Only mark items whose drawing actually posted somewhere — a missing channel, an archived
+    // thread, a forum that requires tags, or any other delivery failure must not consume the item,
+    // otherwise it's lost for good (walmart_seen_items has no retry/expiry). A drawing that posted
+    // for one guild but failed for another still gets retried next poll for everyone rather than
+    // risking permanent loss — a harmless duplicate post beats a silent drop.
+    const postedItems = newItems.filter((item) => !failedDrawKeys.has(item.drawKey));
+    if (postedItems.length > 0) {
+      markItemsSeen(postedItems);
+    }
   } catch (err) {
     await reportFailure(client, 'walmart-poll', err);
   }
 }
 
+/** Returns the drawKeys that failed to post for this guild, so the caller can avoid marking them seen. */
 async function postNewDrawItems(
   client: Client,
   guildId: string,
   channelId: string,
   roleId: string | undefined,
   byDrawKey: Map<string, WalmartSeenItem[]>,
-): Promise<void> {
+): Promise<Set<string>> {
   const channel = await client.channels.fetch(channelId).catch(() => null);
   if (!channel || channel.type !== ChannelType.GuildForum) {
     await reportFailure(
@@ -125,17 +161,20 @@ async function postNewDrawItems(
       'walmart-poll',
       new Error(`Configured Walmart channel ${channelId} for guild ${guildId} is missing or not a forum channel`),
     );
-    return;
+    return new Set(byDrawKey.keys());
   }
   const forum = channel as ForumChannel;
 
+  const failedDrawKeys = new Set<string>();
   for (const [drawKey, items] of byDrawKey) {
     try {
       await postDrawGroup(forum, guildId, drawKey, items, roleId);
     } catch (err) {
       await reportFailure(client, 'walmart-poll', err);
+      failedDrawKeys.add(drawKey);
     }
   }
+  return failedDrawKeys;
 }
 
 /** Posts (or appends to) the one forum thread for this drawing. */
