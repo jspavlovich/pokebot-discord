@@ -1,4 +1,4 @@
-# Guided sighting report via button + chained modals (design doc, not yet implemented)
+# Guided sighting report via button + modals (implemented)
 
 ## Problem
 
@@ -15,12 +15,16 @@ they are for anyone who prefers them.
    **Report Sighting** and **Report No Stock**.
 2. Click either button → **Modal 1**: a single Retailer select menu
    (populated from `listRetailersInUse`).
-3. Submit → chains directly to **Modal 2** (a `ModalSubmitInteraction` can
-   itself respond with another modal, same as a button can):
+3. Submit → Discord does not allow responding to a modal submission with
+   another modal (see the constraints section below — this was tried first
+   and failed in production), so the submit handler instead replies with a
+   **Continue** button.
+4. Click Continue → **Modal 2**, opened from that button interaction (which
+   *is* allowed to show a modal):
    - Sighting flow: Location select (from `listLocations`, filtered to the
      chosen retailer) + a paragraph text field for Details.
    - No Stock flow: Location select only, no text field.
-4. Submit → resolves the retailer/location pair and runs the same
+5. Submit → resolves the retailer/location pair and runs the same
    thread-creation logic `/sighting` and `/non-sightings` already have.
 
 ## Discord API constraints this design works within
@@ -42,15 +46,26 @@ Confirmed against the installed `discord.js@14.27.0` / `@discordjs/builders@1.14
   option feature (`isAutocomplete()` interactions); `APITextInputComponent`
   has no field for live suggestions. This is why the guided flow uses select
   menus instead of free-text fields for retailer/location.
-- **Modals can chain.** `ModalSubmitInteraction` has `showModal()` applied to
-  it (`discord.js/src/structures/interfaces/InteractionResponses.js`), so
-  responding to a modal submission with another modal is a normal interaction
-  response (type 9), not a special case. Each hop is bound by the same
-  3-second response window as any interaction, and `showModal()` must be the
-  *immediate* response — no defer-then-modal. Whatever Modal 2 needs (e.g.
-  the retailer-filtered location list) has to be fetched synchronously before
-  calling `showModal()`; `better-sqlite3` is local and synchronous, so this
-  isn't a real latency concern here.
+- **A modal cannot be shown in response to a modal submission.** Only a
+  button or select-menu interaction can open one. This shipped as a bug once
+  (`TypeError: interaction.showModal is not a function` from
+  `ModalSubmitInteraction`) before being caught — `applyToClass`'s second
+  argument in `discord.js/src/structures/interfaces/InteractionResponses.js`
+  is an *exclude* list, and `ModalSubmitInteraction.js` explicitly passes
+  `'showModal'` to it; `MessageComponentInteraction.js` (buttons, selects)
+  passes no exclusions, so those classes keep it. Confirmed independently by
+  Discord's own API team: "you still won't be able to respond to MODAL_SUBMIT
+  with another modal" ([discord-api-docs discussion
+  #4559](https://github.com/discord/discord-api-docs/discussions/4559)).
+  Multi-page modals are only "planned," not shipped. This is why Modal 1's
+  submit handler replies with a Continue button instead of opening Modal 2
+  directly — Modal 2 opens from that button's interaction.
+- Each hop (button → modal, modal submit → reply, button → modal again) is
+  bound by the normal 3-second interaction response window, and `showModal()`
+  must be the *immediate* response on whichever interaction opens it — no
+  defer-then-modal. Whatever a modal needs (e.g. the retailer-filtered
+  location list) has to be fetched synchronously first; `better-sqlite3` is
+  local and synchronous, so this isn't a real latency concern here.
 - **No offline renderer.** Modals only render inside the real Discord client.
   "Local" testing means a dev bot + a private test guild, not a simulator —
   this repo already supports that via `GUILD_ID` (instant guild-scoped
@@ -110,16 +125,21 @@ budget. Not needed for v1 — current data is empty.
 - Post buttons: `report-start:sighting`, `report-start:nonsighting`.
 - Modal 1 (Retailer): `report-retailer:<flow>`. Field customId: `retailer`
   (string select).
-- Modal 2 (Location [+ Details]): `report-details:<flow>:<retailer>`,
+- Continue button (Modal 1's reply): `report-continue:<flow>:<retailer>`,
   parsed with a 2-part split limit so a retailer name containing `:` still
-  round-trips. Field customIds: `location` (string select), `details`
+  round-trips.
+- Modal 2 (Location [+ Details]): `report-details:<flow>:<retailer>`, same
+  split handling. Field customIds: `location` (string select), `details`
   (paragraph text, sighting flow only).
 
 New file `src/handlers/reportFlow.ts`:
 
 - `handleReportStartButton(interaction: ButtonInteraction)` — shows Modal 1.
 - `handleRetailerModalSubmit(interaction: ModalSubmitInteraction)` — reads
-  flow + retailer from the select, builds and shows Modal 2.
+  flow + retailer from the select, replies with a Continue button (can't open
+  Modal 2 directly from a modal submission — see constraints above).
+- `handleReportContinueButton(interaction: ButtonInteraction)` — reads
+  flow/retailer from `customId`, builds and shows Modal 2.
 - `handleReportDetailsModalSubmit(interaction: ModalSubmitInteraction)` —
   reads flow/retailer from `customId` and location (+ details) from the
   fields, calls `reportSighting` or `reportNonSighting`.
@@ -128,8 +148,10 @@ New file `src/handlers/reportFlow.ts`:
 
 - `interaction.isButton() && interaction.customId.startsWith('report-start:')`
   → `handleReportStartButton`.
-- A new `interaction.isModalSubmit()` branch (none exists today — only
-  chat-input, autocomplete, and button branches) → dispatch on
+- `interaction.isButton() && interaction.customId.startsWith('report-continue:')`
+  → `handleReportContinueButton`.
+- A new `interaction.isModalSubmit()` branch (none exists before this feature
+  — only chat-input, autocomplete, and button branches) → dispatch on
   `customId.startsWith('report-retailer:')` / `'report-details:'`.
 
 ## Open questions to settle before implementing

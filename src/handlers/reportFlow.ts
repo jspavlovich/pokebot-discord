@@ -1,5 +1,8 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
   ButtonInteraction,
+  ButtonStyle,
   LabelBuilder,
   ModalBuilder,
   ModalSubmitInteraction,
@@ -12,20 +15,17 @@ import { reportSighting } from '../commands/sighting';
 import { reportNonSighting } from '../commands/non-sightings';
 
 /**
- * discord.js's runtime mixes `showModal` onto ModalSubmitInteraction (see
- * node_modules/discord.js/src/structures/ModalSubmitInteraction.js) so a modal submission can
- * itself open another modal, but the shipped typings (14.27.0) only declare `showModal` on
- * CommandInteraction and MessageComponentInteraction — not yet on ModalSubmitInteraction. Narrow
- * cast here once instead of `as any` at every call site.
- */
-function showModalFrom(interaction: ModalSubmitInteraction, modal: ModalBuilder): Promise<unknown> {
-  return (interaction as unknown as Pick<ButtonInteraction, 'showModal'>).showModal(modal);
-}
-
-/**
  * Guided report flow for members who'd rather click a button than learn a slash command:
- * report-start button -> Modal 1 (Retailer select) -> Modal 2 (Location select, + Details for
- * sightings) -> same thread-creation logic /sighting and /non-sightings already use.
+ * report-start button -> Modal 1 (Retailer select) -> Continue button -> Modal 2 (Location
+ * select, + Details for sightings) -> same thread-creation logic /sighting and /non-sightings
+ * already use.
+ *
+ * Discord does not allow responding to a modal submission with another modal — only a button or
+ * select-menu interaction can open one (confirmed both by discord.js's source, which explicitly
+ * excludes `showModal` when mixing response methods onto ModalSubmitInteraction, and by Discord's
+ * own API team: https://github.com/discord/discord-api-docs/discussions/4559). So Modal 1's
+ * submit handler can't open Modal 2 directly; it replies with a Continue button instead, and
+ * Modal 2 opens from that button click.
  *
  * See docs/design/guided-sighting-report.md for the full design, including why a global
  * 25-option-per-select / 5-field-per-modal cap doesn't bite here: listRetailersInUse() only
@@ -132,7 +132,46 @@ export async function handleRetailerModalSubmit(interaction: ModalSubmitInteract
     return;
   }
 
-  await showModalFrom(interaction, buildDetailsModal(flow, retailer, locations));
+  // Can't open Modal 2 from here (see the file-level comment) — reply with a Continue button;
+  // handleReportContinueButton opens Modal 2 once it's clicked.
+  const continueRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`report-continue:${flow}:${retailer}`)
+      .setLabel('Continue')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  await interaction.reply({
+    content: `**${retailer}** selected. Click Continue to pick a location.`,
+    components: [continueRow],
+    ephemeral: true,
+  });
+}
+
+export async function handleReportContinueButton(interaction: ButtonInteraction): Promise<void> {
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await interaction.reply({ content: 'This only works in a server.', ephemeral: true });
+    return;
+  }
+
+  // customId is `report-continue:<flow>:<retailer>` — split with a 2-part limit so a retailer
+  // name containing ":" still round-trips.
+  const [, flowPart, ...rest] = interaction.customId.split(':');
+  const flow = parseFlow(flowPart);
+  const retailer = rest.join(':');
+  if (!flow || !retailer) return;
+
+  const locations = listLocations(guildId, retailer);
+  if (locations.length === 0) {
+    await interaction.reply({
+      content: `No locations are configured for ${retailer} yet. Ask a mod to set one up with \`/sighting-location add\`.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.showModal(buildDetailsModal(flow, retailer, locations));
 }
 
 export async function handleReportDetailsModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
