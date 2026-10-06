@@ -18,7 +18,7 @@ const POLL_INTERVAL_MS = 60 * 60 * 1000;
 // to type two slash commands) collapses into one poll that sees both, rather than the channel
 // trigger immediately posting everything pending with no role ping, leaving the role trigger
 // with nothing left to post.
-const TRIGGER_DEBOUNCE_MS = 10 * 1000;
+const TRIGGER_DEBOUNCE_MS = 15 * 1000;
 
 // No DRAW_ELIGIBLE badge found on an item — rare, but still needs a stable grouping key.
 const NO_DRAW_DATE_KEY = '__no_draw_date__';
