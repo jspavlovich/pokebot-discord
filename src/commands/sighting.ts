@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  Attachment,
   AutocompleteInteraction,
   ButtonBuilder,
   ButtonStyle,
@@ -7,6 +8,8 @@ import {
   ChatInputCommandInteraction,
   EmbedBuilder,
   ForumChannel,
+  Guild,
+  RepliableInteraction,
   SlashCommandBuilder,
 } from 'discord.js';
 import { getLocationByNames, listLocations, listRetailersInUse } from '../services/locations';
@@ -68,6 +71,23 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const details = interaction.options.getString('details', true);
   const photo = interaction.options.getAttachment('photo');
 
+  await reportSighting(interaction, guildId, interaction.guild, retailer, neighborhoodName, details, photo);
+}
+
+/**
+ * Shared by the /sighting slash command and the button+modal guided-report flow
+ * (handlers/reportFlow.ts) — everything past "which retailer/location/details did they report."
+ * `photo` only ever comes from the slash command; the modal flow has no attachment input.
+ */
+export async function reportSighting(
+  interaction: RepliableInteraction,
+  guildId: string,
+  guild: Guild,
+  retailer: string,
+  neighborhoodName: string,
+  details: string,
+  photo?: Attachment | null
+): Promise<void> {
   const location = getLocationByNames(guildId, retailer, neighborhoodName);
 
   const channelId = getSightingsChannelId(guildId);
@@ -79,7 +99,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const channel = await interaction.guild.channels.fetch(channelId).catch(() => null);
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || channel.type !== ChannelType.GuildForum) {
     await interaction.reply({
       content: "The configured sightings channel is missing or isn't a forum channel. Ask a mod to check `/config show`.",

@@ -4,8 +4,10 @@ import {
   ChannelType,
   ChatInputCommandInteraction,
   ForumChannel,
+  Guild,
   ButtonBuilder,
   ButtonStyle,
+  RepliableInteraction,
   SlashCommandBuilder,
 } from "discord.js";
 import { getSightingsChannelId } from "../services/config";
@@ -86,6 +88,21 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   const retailer = interaction.options.getString("retailer", true);
   const neighborhoodName = interaction.options.getString("location", true);
+
+  await reportNonSighting(interaction, guildId, interaction.guild, retailer, neighborhoodName);
+}
+
+/**
+ * Shared by the /non-sightings slash command and the button+modal guided-report flow
+ * (handlers/reportFlow.ts).
+ */
+export async function reportNonSighting(
+  interaction: RepliableInteraction,
+  guildId: string,
+  guild: Guild,
+  retailer: string,
+  neighborhoodName: string,
+): Promise<void> {
   const location = getLocationByNames(guildId, retailer, neighborhoodName);
   if (!location) {
     await interaction.reply({
@@ -106,9 +123,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const channel = await interaction.guild.channels
-    .fetch(channelId)
-    .catch(() => null);
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || channel.type !== ChannelType.GuildForum) {
     await interaction.reply({
       content:

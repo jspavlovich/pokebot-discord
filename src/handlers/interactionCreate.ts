@@ -1,6 +1,7 @@
 import { Interaction } from 'discord.js';
 import { commands } from '../commands';
 import { handleClearButton } from './buttons';
+import { handleReportDetailsModalSubmit, handleReportStartButton, handleRetailerModalSubmit } from './reportFlow';
 
 const commandMap = new Map(commands.map((c) => [c.data.name, c]));
 
@@ -22,6 +23,21 @@ export async function handleInteraction(interaction: Interaction) {
 
     if (interaction.isButton() && interaction.customId === 'sighting-clear') {
       await handleClearButton(interaction);
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId.startsWith('report-start:')) {
+      await handleReportStartButton(interaction);
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('report-retailer:')) {
+      await handleRetailerModalSubmit(interaction);
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('report-details:')) {
+      await handleReportDetailsModalSubmit(interaction);
       return;
     }
   } catch (err) {
