@@ -39,6 +39,38 @@ with room to grow into moderation, fun commands, and other integrations later.
 - None of the above ever needs a code change or redeploy — it's all live admin commands.
 - `/config set-sightings-channel|show` (mod-only) points the bot at the forum channel to use.
 
+## Walmart collectibles drawing alerts
+
+- A background poll (every hour) checks Walmart's collectibles drawing page
+  (`walmart.com/shop/collectibles/draw`) for new Pokémon TCG items and posts about them —
+  same "poll an interval, diff against known state" shape as the thread-expiry sweep, but
+  watching a retailer page instead of our own thread state.
+- Items are grouped by their drawing's start time. Each distinct drawing gets one forum thread
+  in the configured channel, titled `Walmart Draw <MM/DD> <H AM/PM> <timezone>` — Walmart's own
+  badge is Pacific time, converted to Eastern to match every other thread in this bot; every new
+  item found for a drawing that already has a thread gets posted as a reply in it rather than a
+  new thread. The thread body pings the configured role, then lists the item names plus a link
+  to the drawing page — entries aren't purchasable individually, you enter the drawing from that
+  one page.
+- The very first poll treats everything currently on the page as new and posts it — nothing is
+  silently baselined. After that, only items that weren't there on a previous poll get alerted.
+- `/config set-walmart-channel|show` (mod-only) points the bot at the forum channel to post
+  drawing alerts into (an existing forum channel — the bot doesn't create or tag it).
+- `/config set-walmart-role` (mod-only, optional) sets the role pinged in each drawing post.
+  Posting still works without one — the ping is just skipped.
+- Nothing gets missed if the channel/role aren't configured yet when the bot starts (e.g. right
+  after a fresh deploy) — items just stay pending instead of being consumed by an unconfigured
+  poll. Both `set-walmart-channel` and `set-walmart-role` also trigger an immediate check after
+  saving, so anything pending posts right away instead of waiting for the next hourly tick.
+
+## Background-job failure alerts
+
+- Anything a background job catches (a failed Walmart poll, a thread the expire sweep couldn't
+  close out, ...) gets reported to a configured channel, not just the process logs — so trouble
+  with an unattended job doesn't stay invisible until someone happens to check.
+- `/config set-failure-channel|show` (mod-only) points the bot at the text channel to report to.
+  Optional — if unset, failures still get logged to the console, just not to Discord.
+
 ## One-time Discord-side setup
 
 1. Create a **Forum Channel** in your server for sightings (name it whatever you like).
@@ -47,6 +79,9 @@ with room to grow into moderation, fun commands, and other integrations later.
    require an extra `Manage Channels` permission we intentionally didn't grant it).
 3. Make sure the bot has access to that channel (it inherits server-wide permissions from its
    invite by default, but double check if the channel has custom overrides).
+4. For Walmart drawing alerts, make sure the bot has access to your Walmart-drawings forum
+   channel (no required tags — the bot just posts into it). Optionally, pick a text channel for
+   background-job failure alerts too.
 
 ## Local setup
 
@@ -54,9 +89,13 @@ with room to grow into moderation, fun commands, and other integrations later.
 npm install
 cp .env.example .env
 # fill in DISCORD_TOKEN, CLIENT_ID, GUILD_ID in .env
-npm run deploy-commands   # registers the slash commands with Discord
 npm run dev               # runs the bot with live TypeScript execution
 ```
+
+Slash commands register with Discord automatically every time the bot starts (`npm run dev` /
+`npm start`), so there's no separate deploy step for day-to-day command changes. `npm run
+deploy-commands` still exists as a standalone script if you want to register commands without
+starting the full bot.
 
 Once it's running in your server:
 
@@ -113,11 +152,9 @@ the tracked template.
 3. Set the environment variables from `.env.example` in Railway's dashboard (never commit the
    real `.env`).
 4. Railway auto-detects this as a Node project, runs `npm install` then `npm run build`
-   (via the `build` script), and starts it with `npm start`.
-5. After the first deploy, run `npm run deploy-commands` once from your local machine (pointed
-   at the same `CLIENT_ID`/`GUILD_ID`/`DISCORD_TOKEN`) to register the slash commands — this
-   only needs to be re-run when commands change, not on every deploy.
-6. In Railway's workspace usage settings, consider setting a **soft** spending limit (email
+   (via the `build` script), and starts it with `npm start`. Slash commands register with
+   Discord automatically on every startup — no separate deploy-commands step needed.
+5. In Railway's workspace usage settings, consider setting a **soft** spending limit (email
    alert only) rather than a hard limit — a hard limit takes the bot fully offline until
    manually raised, which is worse for an always-on tool than an occasional extra dollar.
 
@@ -126,11 +163,13 @@ the tracked template.
 ```
 src/
   commands/       one file per slash command (data + execute + optional autocomplete)
-  services/       SQLite-backed data access (config, roles, retailers, neighborhoods, locations, threads)
+  services/       SQLite-backed data access (config, roles, retailers, neighborhoods, locations, threads, walmartWatch)
   handlers/       routes interactions (commands, autocomplete, buttons) to the right code
-  jobs/           the 24h thread-expiry background sweep
+  jobs/           the 24h thread-expiry sweep and the Walmart collectibles drawing poll
+  util/           Eastern-time helpers, Walmart draw-title parsing, failure-alert reporting
   db/             schema + connection setup
   config.ts       environment variable loading
   index.ts        bot entrypoint
-  deploy-commands.ts   one-off script to register slash commands with Discord
+  deployCommands.ts    registers slash commands with Discord (called on every bot startup)
+  deploy-commands.ts   standalone script wrapper around deployCommands.ts (`npm run deploy-commands`)
 ```
