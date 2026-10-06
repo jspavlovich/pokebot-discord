@@ -13,6 +13,13 @@ import { drawThreadTitle } from '../util/walmartDraw';
 const WALMART_URL = 'https://www.walmart.com/shop/collectibles/draw';
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
 
+// How long to wait for config changes to settle before an immediate trigger actually runs —
+// long enough that setting the channel and then the role a few seconds apart (the normal way
+// to type two slash commands) collapses into one poll that sees both, rather than the channel
+// trigger immediately posting everything pending with no role ping, leaving the role trigger
+// with nothing left to post.
+const TRIGGER_DEBOUNCE_MS = 10 * 1000;
+
 // No DRAW_ELIGIBLE badge found on an item — rare, but still needs a stable grouping key.
 const NO_DRAW_DATE_KEY = '__no_draw_date__';
 
@@ -42,15 +49,24 @@ export function startWalmartPoll(client: Client) {
   setInterval(() => runPoll(client), POLL_INTERVAL_MS);
 }
 
+let pendingTrigger: NodeJS.Timeout | null = null;
+
 /**
- * Runs a poll immediately rather than waiting for the next hourly tick — meant for /config
+ * Requests a poll soon rather than waiting for the next hourly tick — meant for /config
  * set-walmart-channel and set-walmart-role to call right after a mod sets one up, so whatever's
- * currently pending posts right away instead of sitting for up to an hour. Fire-and-forget, same
- * as the interval's own call: runPoll already reports its own failures, and a config command's
- * reply shouldn't be blocked on (or risk timing out from) a live Walmart fetch.
+ * currently pending posts right away instead of sitting for up to an hour. Debounced: calling
+ * this again before the delay elapses (e.g. setting the channel, then the role moments later)
+ * cancels the pending run and restarts the wait, so both config commands collapse into one poll
+ * that sees whichever settings have landed by then — not two separate polls where the first one
+ * posts everything before the second setting even exists. Fire-and-forget either way: runPoll
+ * reports its own failures, and a config command's reply shouldn't be blocked on a live fetch.
  */
 export function triggerWalmartPoll(client: Client): void {
-  runPoll(client);
+  if (pendingTrigger) clearTimeout(pendingTrigger);
+  pendingTrigger = setTimeout(() => {
+    pendingTrigger = null;
+    runPoll(client);
+  }, TRIGGER_DEBOUNCE_MS);
 }
 
 async function runPoll(client: Client) {

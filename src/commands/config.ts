@@ -90,7 +90,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const channel = interaction.options.getChannel("channel", true);
     setWalmartAlertsChannelId(guildId, channel.id);
     await interaction.reply({
-      content: `Walmart drawing alerts will now post to <#${channel.id}>. Checking for anything pending now...`,
+      content: `Walmart drawing alerts will now post to <#${channel.id}>. Checking for anything pending shortly...`,
       ephemeral: true,
     });
     // Fire-and-forget, after replying — a live Walmart fetch shouldn't risk the interaction's
@@ -104,7 +104,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const role = interaction.options.getRole("role", true);
     setWalmartRoleId(guildId, role.id);
     await interaction.reply({
-      content: `Walmart drawing alerts will now ping <@&${role.id}>. Checking for anything pending now...`,
+      content: `Walmart drawing alerts will now ping <@&${role.id}>. Checking for anything pending shortly...`,
       ephemeral: true,
     });
     triggerWalmartPoll(interaction.client);
