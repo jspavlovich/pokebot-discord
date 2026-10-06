@@ -39,6 +39,31 @@ with room to grow into moderation, fun commands, and other integrations later.
 - None of the above ever needs a code change or redeploy — it's all live admin commands.
 - `/config set-sightings-channel|show` (mod-only) points the bot at the forum channel to use.
 
+## Walmart collectibles drawing alerts
+
+- A background poll (every 15 minutes) checks Walmart's collectibles drawing page
+  (`walmart.com/shop/collectibles/draw`) for new Pokémon TCG items and posts about them —
+  same "poll an interval, diff against known state" shape as the thread-expiry sweep, but
+  watching a retailer page instead of our own thread state.
+- Items are grouped by their drawing's start time. Each distinct drawing gets one forum thread
+  in the configured channel, titled `Walmart Draw <MM/DD> <H AM/PM> <timezone>` (converted to
+  Eastern); every new item found for a drawing that already has a thread gets posted as a reply
+  in it rather than a new thread. The thread body is just a bullet list of item names plus a
+  link to the drawing page — entries aren't purchasable individually, you enter the drawing from
+  that one page.
+- First deploy baselines whatever's currently listed as "already seen" without posting, so
+  turning this on doesn't flood the channel with every item already on the page.
+- `/config set-walmart-channel|show` (mod-only) points the bot at the forum channel to post
+  drawing alerts into (an existing forum channel — the bot doesn't create or tag it).
+
+## Background-job failure alerts
+
+- Anything a background job catches (a failed Walmart poll, a thread the expire sweep couldn't
+  close out, ...) gets reported to a configured channel, not just the process logs — so trouble
+  with an unattended job doesn't stay invisible until someone happens to check.
+- `/config set-failure-channel|show` (mod-only) points the bot at the text channel to report to.
+  Optional — if unset, failures still get logged to the console, just not to Discord.
+
 ## One-time Discord-side setup
 
 1. Create a **Forum Channel** in your server for sightings (name it whatever you like).
@@ -47,6 +72,9 @@ with room to grow into moderation, fun commands, and other integrations later.
    require an extra `Manage Channels` permission we intentionally didn't grant it).
 3. Make sure the bot has access to that channel (it inherits server-wide permissions from its
    invite by default, but double check if the channel has custom overrides).
+4. For Walmart drawing alerts, make sure the bot has access to your Walmart-drawings forum
+   channel (no required tags — the bot just posts into it). Optionally, pick a text channel for
+   background-job failure alerts too.
 
 ## Local setup
 
@@ -126,9 +154,10 @@ the tracked template.
 ```
 src/
   commands/       one file per slash command (data + execute + optional autocomplete)
-  services/       SQLite-backed data access (config, roles, retailers, neighborhoods, locations, threads)
+  services/       SQLite-backed data access (config, roles, retailers, neighborhoods, locations, threads, walmartWatch)
   handlers/       routes interactions (commands, autocomplete, buttons) to the right code
-  jobs/           the 24h thread-expiry background sweep
+  jobs/           the 24h thread-expiry sweep and the Walmart collectibles drawing poll
+  util/           Eastern-time helpers, Walmart draw-title parsing, failure-alert reporting
   db/             schema + connection setup
   config.ts       environment variable loading
   index.ts        bot entrypoint

@@ -9,6 +9,7 @@ import {
   ThreadRow,
 } from '../services/threads';
 import { startOfNextEasternDay } from '../util/date';
+import { reportFailure } from '../util/failureAlerts';
 
 const SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -23,7 +24,7 @@ async function runSweep(client: Client) {
     try {
       await expireOne(client, row);
     } catch (err) {
-      console.error(`Failed to expire thread ${row.thread_id}:`, err);
+      await reportFailure(client, 'expire-sweep', err);
       // Mark it expired anyway so a permanently broken thread doesn't get retried forever.
       markExpired(row.id);
     }

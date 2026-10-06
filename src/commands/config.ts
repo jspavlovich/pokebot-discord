@@ -5,8 +5,12 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import {
+  getFailureAlertsChannelId,
   getSightingsChannelId,
+  getWalmartAlertsChannelId,
+  setFailureAlertsChannelId,
   setSightingsChannelId,
+  setWalmartAlertsChannelId,
 } from "../services/config";
 
 export const data = new SlashCommandBuilder()
@@ -22,6 +26,30 @@ export const data = new SlashCommandBuilder()
           .setName("channel")
           .setDescription("A forum channel")
           .addChannelTypes(ChannelType.GuildForum)
+          .setRequired(true),
+      ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("set-walmart-channel")
+      .setDescription("Set the forum channel Walmart drawing alerts post into")
+      .addChannelOption((o) =>
+        o
+          .setName("channel")
+          .setDescription("A forum channel")
+          .addChannelTypes(ChannelType.GuildForum)
+          .setRequired(true),
+      ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("set-failure-channel")
+      .setDescription("Set the channel background-job failures get reported to")
+      .addChannelOption((o) =>
+        o
+          .setName("channel")
+          .setDescription("A text channel")
+          .addChannelTypes(ChannelType.GuildText)
           .setRequired(true),
       ),
   )
@@ -44,12 +72,42 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  if (sub === "set-walmart-channel") {
+    const channel = interaction.options.getChannel("channel", true);
+    setWalmartAlertsChannelId(guildId, channel.id);
+    await interaction.reply({
+      content: `Walmart drawing alerts will now post to <#${channel.id}>.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "set-failure-channel") {
+    const channel = interaction.options.getChannel("channel", true);
+    setFailureAlertsChannelId(guildId, channel.id);
+    await interaction.reply({
+      content: `Background-job failures will now be reported to <#${channel.id}>.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
   if (sub === "show") {
     const channelId = getSightingsChannelId(guildId);
+    const walmartChannelId = getWalmartAlertsChannelId(guildId);
+    const failureChannelId = getFailureAlertsChannelId(guildId);
     await interaction.reply({
-      content: channelId
-        ? `Sightings channel: <#${channelId}>`
-        : "Sightings channel not set yet.",
+      content: [
+        channelId
+          ? `Sightings channel: <#${channelId}>`
+          : "Sightings channel not set yet.",
+        walmartChannelId
+          ? `Walmart drawing alerts channel: <#${walmartChannelId}>`
+          : "Walmart drawing alerts channel not set yet.",
+        failureChannelId
+          ? `Failure alerts channel: <#${failureChannelId}>`
+          : "Failure alerts channel not set yet.",
+      ].join("\n"),
       ephemeral: true,
     });
   }
