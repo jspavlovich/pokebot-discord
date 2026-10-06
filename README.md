@@ -82,9 +82,13 @@ with room to grow into moderation, fun commands, and other integrations later.
 npm install
 cp .env.example .env
 # fill in DISCORD_TOKEN, CLIENT_ID, GUILD_ID in .env
-npm run deploy-commands   # registers the slash commands with Discord
 npm run dev               # runs the bot with live TypeScript execution
 ```
+
+Slash commands register with Discord automatically every time the bot starts (`npm run dev` /
+`npm start`), so there's no separate deploy step for day-to-day command changes. `npm run
+deploy-commands` still exists as a standalone script if you want to register commands without
+starting the full bot.
 
 Once it's running in your server:
 
@@ -141,11 +145,9 @@ the tracked template.
 3. Set the environment variables from `.env.example` in Railway's dashboard (never commit the
    real `.env`).
 4. Railway auto-detects this as a Node project, runs `npm install` then `npm run build`
-   (via the `build` script), and starts it with `npm start`.
-5. After the first deploy, run `npm run deploy-commands` once from your local machine (pointed
-   at the same `CLIENT_ID`/`GUILD_ID`/`DISCORD_TOKEN`) to register the slash commands — this
-   only needs to be re-run when commands change, not on every deploy.
-6. In Railway's workspace usage settings, consider setting a **soft** spending limit (email
+   (via the `build` script), and starts it with `npm start`. Slash commands register with
+   Discord automatically on every startup — no separate deploy-commands step needed.
+5. In Railway's workspace usage settings, consider setting a **soft** spending limit (email
    alert only) rather than a hard limit — a hard limit takes the bot fully offline until
    manually raised, which is worse for an always-on tool than an occasional extra dollar.
 
@@ -161,5 +163,6 @@ src/
   db/             schema + connection setup
   config.ts       environment variable loading
   index.ts        bot entrypoint
-  deploy-commands.ts   one-off script to register slash commands with Discord
+  deployCommands.ts    registers slash commands with Discord (called on every bot startup)
+  deploy-commands.ts   standalone script wrapper around deployCommands.ts (`npm run deploy-commands`)
 ```

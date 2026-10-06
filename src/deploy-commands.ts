@@ -1,21 +1,10 @@
-import { REST, Routes } from 'discord.js';
-import { commands } from './commands';
-import { config } from './config';
+import { deployCommands } from './deployCommands';
 
-async function main() {
-  const body = commands.map((c) => c.data.toJSON());
-  const rest = new REST().setToken(config.token);
-
-  if (config.guildId) {
-    await rest.put(Routes.applicationGuildCommands(config.clientId, config.guildId), { body });
-    console.log(`Deployed ${body.length} commands to guild ${config.guildId} (instant).`);
-  } else {
-    await rest.put(Routes.applicationCommands(config.clientId), { body });
-    console.log(`Deployed ${body.length} global commands (can take up to an hour to propagate).`);
-  }
-}
-
-main().catch((err) => {
+// Standalone entry point for `npm run deploy-commands`. No longer strictly required day-to-day
+// since src/index.ts now deploys on every bot startup too — kept around for registering
+// commands without starting the full bot (e.g. right after setting CLIENT_ID/GUILD_ID for the
+// first time, before anything else is configured).
+deployCommands().catch((err) => {
   console.error(err);
   process.exit(1);
 });
