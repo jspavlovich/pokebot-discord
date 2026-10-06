@@ -58,6 +58,10 @@ with room to grow into moderation, fun commands, and other integrations later.
   drawing alerts into (an existing forum channel — the bot doesn't create or tag it).
 - `/config set-walmart-role` (mod-only, optional) sets the role pinged in each drawing post.
   Posting still works without one — the ping is just skipped.
+- Nothing gets missed if the channel/role aren't configured yet when the bot starts (e.g. right
+  after a fresh deploy) — items just stay pending instead of being consumed by an unconfigured
+  poll. Both `set-walmart-channel` and `set-walmart-role` also trigger an immediate check after
+  saving, so anything pending posts right away instead of waiting for the next hourly tick.
 
 ## Background-job failure alerts
 

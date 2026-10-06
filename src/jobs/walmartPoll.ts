@@ -42,6 +42,17 @@ export function startWalmartPoll(client: Client) {
   setInterval(() => runPoll(client), POLL_INTERVAL_MS);
 }
 
+/**
+ * Runs a poll immediately rather than waiting for the next hourly tick — meant for /config
+ * set-walmart-channel and set-walmart-role to call right after a mod sets one up, so whatever's
+ * currently pending posts right away instead of sitting for up to an hour. Fire-and-forget, same
+ * as the interval's own call: runPoll already reports its own failures, and a config command's
+ * reply shouldn't be blocked on (or risk timing out from) a live Walmart fetch.
+ */
+export function triggerWalmartPoll(client: Client): void {
+  runPoll(client);
+}
+
 async function runPoll(client: Client) {
   try {
     const rawProducts = await fetchDrawCarouselProducts();

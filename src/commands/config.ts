@@ -4,6 +4,7 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from "discord.js";
+import { triggerWalmartPoll } from "../jobs/walmartPoll";
 import {
   getFailureAlertsChannelId,
   getSightingsChannelId,
@@ -89,9 +90,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const channel = interaction.options.getChannel("channel", true);
     setWalmartAlertsChannelId(guildId, channel.id);
     await interaction.reply({
-      content: `Walmart drawing alerts will now post to <#${channel.id}>.`,
+      content: `Walmart drawing alerts will now post to <#${channel.id}>. Checking for anything pending now...`,
       ephemeral: true,
     });
+    // Fire-and-forget, after replying — a live Walmart fetch shouldn't risk the interaction's
+    // own response timing out. Catches up on anything that's been sitting unposted since the
+    // last poll (e.g. right after a fresh deploy) instead of waiting up to an hour.
+    triggerWalmartPoll(interaction.client);
     return;
   }
 
@@ -99,9 +104,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const role = interaction.options.getRole("role", true);
     setWalmartRoleId(guildId, role.id);
     await interaction.reply({
-      content: `Walmart drawing alerts will now ping <@&${role.id}>.`,
+      content: `Walmart drawing alerts will now ping <@&${role.id}>. Checking for anything pending now...`,
       ephemeral: true,
     });
+    triggerWalmartPoll(interaction.client);
     return;
   }
 
