@@ -172,6 +172,12 @@ export async function handleReportContinueButton(interaction: ButtonInteraction)
   }
 
   await interaction.showModal(buildDetailsModal(flow, retailer, locations));
+
+  // showModal() is the interaction response; editing the message that held this button is a
+  // separate call (editing the message, not responding to the interaction), so it doesn't
+  // conflict with showModal() and doesn't delay the modal appearing. Without this the Continue
+  // button just sits there, clickable again, after it's already been used.
+  await interaction.message.edit({ components: [] }).catch(() => {});
 }
 
 export async function handleReportDetailsModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
