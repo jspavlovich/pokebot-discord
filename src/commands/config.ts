@@ -8,9 +8,11 @@ import {
   getFailureAlertsChannelId,
   getSightingsChannelId,
   getWalmartAlertsChannelId,
+  getWalmartRoleId,
   setFailureAlertsChannelId,
   setSightingsChannelId,
   setWalmartAlertsChannelId,
+  setWalmartRoleId,
 } from "../services/config";
 
 export const data = new SlashCommandBuilder()
@@ -38,6 +40,17 @@ export const data = new SlashCommandBuilder()
           .setName("channel")
           .setDescription("A forum channel")
           .addChannelTypes(ChannelType.GuildForum)
+          .setRequired(true),
+      ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName("set-walmart-role")
+      .setDescription("Set the role pinged in Walmart drawing alert posts")
+      .addRoleOption((o) =>
+        o
+          .setName("role")
+          .setDescription("Role to ping")
           .setRequired(true),
       ),
   )
@@ -82,6 +95,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  if (sub === "set-walmart-role") {
+    const role = interaction.options.getRole("role", true);
+    setWalmartRoleId(guildId, role.id);
+    await interaction.reply({
+      content: `Walmart drawing alerts will now ping <@&${role.id}>.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
   if (sub === "set-failure-channel") {
     const channel = interaction.options.getChannel("channel", true);
     setFailureAlertsChannelId(guildId, channel.id);
@@ -95,6 +118,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   if (sub === "show") {
     const channelId = getSightingsChannelId(guildId);
     const walmartChannelId = getWalmartAlertsChannelId(guildId);
+    const walmartRoleId = getWalmartRoleId(guildId);
     const failureChannelId = getFailureAlertsChannelId(guildId);
     await interaction.reply({
       content: [
@@ -104,6 +128,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         walmartChannelId
           ? `Walmart drawing alerts channel: <#${walmartChannelId}>`
           : "Walmart drawing alerts channel not set yet.",
+        walmartRoleId
+          ? `Walmart drawing alerts role: <@&${walmartRoleId}>`
+          : "Walmart drawing alerts role not set yet.",
         failureChannelId
           ? `Failure alerts channel: <#${failureChannelId}>`
           : "Failure alerts channel not set yet.",

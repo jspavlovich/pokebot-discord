@@ -41,20 +41,23 @@ with room to grow into moderation, fun commands, and other integrations later.
 
 ## Walmart collectibles drawing alerts
 
-- A background poll (every 15 minutes) checks Walmart's collectibles drawing page
+- A background poll (every hour) checks Walmart's collectibles drawing page
   (`walmart.com/shop/collectibles/draw`) for new Pokémon TCG items and posts about them —
   same "poll an interval, diff against known state" shape as the thread-expiry sweep, but
   watching a retailer page instead of our own thread state.
 - Items are grouped by their drawing's start time. Each distinct drawing gets one forum thread
-  in the configured channel, titled `Walmart Draw <MM/DD> <H AM/PM> <timezone>` (converted to
-  Eastern); every new item found for a drawing that already has a thread gets posted as a reply
-  in it rather than a new thread. The thread body is just a bullet list of item names plus a
-  link to the drawing page — entries aren't purchasable individually, you enter the drawing from
-  that one page.
+  in the configured channel, titled `Walmart Draw <MM/DD> <H AM/PM> <timezone>` — Walmart's own
+  badge is Pacific time, converted to Eastern to match every other thread in this bot; every new
+  item found for a drawing that already has a thread gets posted as a reply in it rather than a
+  new thread. The thread body pings the configured role, then lists the item names plus a link
+  to the drawing page — entries aren't purchasable individually, you enter the drawing from that
+  one page.
 - First deploy baselines whatever's currently listed as "already seen" without posting, so
   turning this on doesn't flood the channel with every item already on the page.
 - `/config set-walmart-channel|show` (mod-only) points the bot at the forum channel to post
   drawing alerts into (an existing forum channel — the bot doesn't create or tag it).
+- `/config set-walmart-role` (mod-only, optional) sets the role pinged in each drawing post.
+  Posting still works without one — the ping is just skipped.
 
 ## Background-job failure alerts
 

@@ -12,7 +12,7 @@ import { reportFailure } from '../util/failureAlerts';
 import { drawThreadTitle } from '../util/walmartDraw';
 
 const WALMART_URL = 'https://www.walmart.com/shop/collectibles/draw';
-const POLL_INTERVAL_MS = 15 * 60 * 1000;
+const POLL_INTERVAL_MS = 60 * 60 * 1000;
 
 // No DRAW_ELIGIBLE badge found on an item — rare, but still needs a stable grouping key.
 const NO_DRAW_DATE_KEY = '__no_draw_date__';
@@ -73,8 +73,8 @@ async function runPoll(client: Client) {
       byDrawKey.set(item.drawKey, group);
     }
 
-    for (const { guildId, channelId } of listWalmartAlertsChannels()) {
-      await postNewDrawItems(client, guildId, channelId, byDrawKey);
+    for (const { guildId, channelId, roleId } of listWalmartAlertsChannels()) {
+      await postNewDrawItems(client, guildId, channelId, roleId, byDrawKey);
     }
 
     markItemsSeen(newItems);
@@ -87,6 +87,7 @@ async function postNewDrawItems(
   client: Client,
   guildId: string,
   channelId: string,
+  roleId: string | undefined,
   byDrawKey: Map<string, WalmartSeenItem[]>,
 ): Promise<void> {
   const channel = await client.channels.fetch(channelId).catch(() => null);
@@ -102,7 +103,7 @@ async function postNewDrawItems(
 
   for (const [drawKey, items] of byDrawKey) {
     try {
-      await postDrawGroup(forum, guildId, drawKey, items);
+      await postDrawGroup(forum, guildId, drawKey, items, roleId);
     } catch (err) {
       await reportFailure(client, 'walmart-poll', err);
     }
@@ -115,8 +116,9 @@ async function postDrawGroup(
   guildId: string,
   drawKey: string,
   items: WalmartSeenItem[],
+  roleId: string | undefined,
 ): Promise<void> {
-  const content = buildDrawMessage(items);
+  const content = buildDrawMessage(items, roleId);
   const existing = findDrawThread(guildId, drawKey);
 
   if (existing) {
@@ -136,11 +138,13 @@ async function postDrawGroup(
   createDrawThreadRecord(guildId, drawKey, thread.id);
 }
 
-function buildDrawMessage(items: WalmartSeenItem[]): string {
+/** No allowedMentions override — like sighting.ts's role ping, this is meant to notify, not be suppressed. */
+function buildDrawMessage(items: WalmartSeenItem[], roleId: string | undefined): string {
   const lines = items.map((item) => `• ${item.title}`);
   const heading =
     items.length > 1 ? 'New Walmart collectibles drawing items' : 'New Walmart collectibles drawing item';
-  return `🎟️ **${heading}:**\n${lines.join('\n')}\n\nEnter here: ${WALMART_URL}`;
+  const ping = roleId ? ` <@&${roleId}>` : '';
+  return `🎟️${ping} **${heading}:**\n${lines.join('\n')}\n\nEnter here: ${WALMART_URL}`;
 }
 
 /**

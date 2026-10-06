@@ -12,7 +12,7 @@ export const db = new Database(config.databasePath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 
 // v2: retailer / location name / role label need case-insensitive matching (COLLATE NOCASE)
@@ -142,6 +142,13 @@ if (
   )
 ) {
   db.exec("ALTER TABLE guild_config ADD COLUMN failure_alerts_channel_id TEXT");
+}
+if (
+  !guildConfigColumns.some(
+    (column) => column.name === "walmart_role_id",
+  )
+) {
+  db.exec("ALTER TABLE guild_config ADD COLUMN walmart_role_id TEXT");
 }
 
 db.pragma(`user_version = ${SCHEMA_VERSION}`);
