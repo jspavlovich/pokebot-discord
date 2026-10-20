@@ -12,7 +12,7 @@ export const db = new Database(config.databasePath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 
 // v2: retailer / location name / role label need case-insensitive matching (COLLATE NOCASE)
@@ -41,6 +41,31 @@ if (currentVersion < 2) {
     DROP TABLE IF EXISTS locations;
     DROP TABLE IF EXISTS neighborhoods;
     DROP TABLE IF EXISTS retailers;
+  `);
+}
+
+// v8: walmart_seen_items was keyed by item_id alone, on the assumption each Walmart product
+// listing belongs to exactly one drawing. Walmart actually reuses the same item_id across
+// successive drawing events (updating the DRAW_ELIGIBLE badge's date/time each time), so an
+// item already seen for an earlier drawing was permanently filtered out of "new" items even
+// once it came back around with a new draw_key — silently dropping real alerts. Rebuilding
+// with a composite (item_id, draw_key) key (and keeping the data, since this now runs against
+// real production history) fixes that: the same item_id is "new" again whenever its draw_key
+// changes.
+if (currentVersion > 0 && currentVersion < 8) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS walmart_seen_items_v8 (
+      item_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      draw_key TEXT NOT NULL,
+      first_seen_at INTEGER NOT NULL,
+      PRIMARY KEY (item_id, draw_key)
+    );
+    INSERT OR IGNORE INTO walmart_seen_items_v8 (item_id, title, url, draw_key, first_seen_at)
+      SELECT item_id, title, url, draw_key, first_seen_at FROM walmart_seen_items;
+    DROP TABLE walmart_seen_items;
+    ALTER TABLE walmart_seen_items_v8 RENAME TO walmart_seen_items;
   `);
 }
 
@@ -98,13 +123,16 @@ CREATE INDEX IF NOT EXISTS idx_threads_lookup
 
 -- Global, not per-guild: the Walmart poll target is one fixed URL, not something guilds
 -- configure differently. item_id is Walmart's own product id, not our own autoincrement.
--- draw_key records which drawing grouping the item belonged to when first seen, for debugging.
+-- Keyed on (item_id, draw_key) rather than item_id alone: Walmart reuses the same item_id
+-- across separate drawing events, so the same product coming back around for a new drawing
+-- (a new draw_key) must still count as "new" and get posted/pinged again.
 CREATE TABLE IF NOT EXISTS walmart_seen_items (
-  item_id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL,
   title TEXT NOT NULL,
   url TEXT NOT NULL,
   draw_key TEXT NOT NULL,
-  first_seen_at INTEGER NOT NULL
+  first_seen_at INTEGER NOT NULL,
+  PRIMARY KEY (item_id, draw_key)
 );
 
 -- One forum thread per distinct drawing (guild-scoped, unlike walmart_seen_items, since the

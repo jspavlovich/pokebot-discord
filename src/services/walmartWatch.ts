@@ -15,17 +15,26 @@ export interface WalmartDrawRow {
   created_at: number;
 }
 
-export function getSeenItemIds(): Set<string> {
+/**
+ * Walmart reuses the same item_id across separate drawing events, so "seen" is scoped to the
+ * (item_id, draw_key) pair, not item_id alone — otherwise an item coming back around for a new
+ * drawing would look identical to one already posted and get silently dropped.
+ */
+export function seenItemKey(itemId: string, drawKey: string): string {
+  return `${itemId}::${drawKey}`;
+}
+
+export function getSeenItemKeys(): Set<string> {
   const rows = db
-    .prepare("SELECT item_id FROM walmart_seen_items")
-    .all() as { item_id: string }[];
-  return new Set(rows.map((row) => row.item_id));
+    .prepare("SELECT item_id, draw_key FROM walmart_seen_items")
+    .all() as { item_id: string; draw_key: string }[];
+  return new Set(rows.map((row) => seenItemKey(row.item_id, row.draw_key)));
 }
 
 /**
  * Records items as seen. Safe to call with items already seen (e.g. still-listed items on a
- * later poll) — the insert is simply skipped for those, title/url/draw_key intentionally not
- * refreshed since first_seen_at is what matters here, not a live mirror of the listing.
+ * later poll) — the insert is simply skipped for those, title/url intentionally not refreshed
+ * since first_seen_at is what matters here, not a live mirror of the listing.
  */
 export function markItemsSeen(
   items: WalmartSeenItem[],
@@ -35,7 +44,7 @@ export function markItemsSeen(
   const insert = db.prepare(
     `INSERT INTO walmart_seen_items (item_id, title, url, draw_key, first_seen_at)
      VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(item_id) DO NOTHING`,
+     ON CONFLICT(item_id, draw_key) DO NOTHING`,
   );
   const insertMany = db.transaction((rows: WalmartSeenItem[]) => {
     for (const item of rows) {

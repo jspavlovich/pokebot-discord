@@ -37,8 +37,10 @@ const US_ZONE_OFFSET_HOURS: Record<string, number> = {
   HST: -10,
 };
 
+// Walmart sometimes gives a single time ("2:00pm PDT") and sometimes a window
+// ("2:00pm - 3:00pm PDT") — the trailing end time, if present, is ignored; only the start matters.
 const SLA_TEXT_PATTERN =
-  /^([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{1,2}):(\d{2})\s*([AaPp][Mm])\s+([A-Za-z]{2,5})$/;
+  /^([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{1,2}):(\d{2})\s*([AaPp][Mm])(?:\s*-\s*\d{1,2}:\d{2}\s*[AaPp][Mm])?\s+([A-Za-z]{2,5})$/;
 
 /** Parses a "Mon DD, H:MMam/pm TZ" badge string into an epoch ms instant, or null if unrecognized. */
 function parseDrawStart(slaText: string, now: number): number | null {
