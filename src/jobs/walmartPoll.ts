@@ -3,8 +3,9 @@ import { listWalmartAlertsChannels } from '../services/config';
 import {
   createDrawThreadRecord,
   findDrawThread,
-  getSeenItemIds,
+  getSeenItemKeys,
   markItemsSeen,
+  seenItemKey,
   WalmartSeenItem,
 } from '../services/walmartWatch';
 import { reportFailure } from '../util/failureAlerts';
@@ -106,8 +107,11 @@ async function runPoll(client: Client) {
       .map(toSeenItem)
       .filter((item): item is WalmartSeenItem => item !== null);
 
-    const seenIds = getSeenItemIds();
-    const newItems = pokemonItems.filter((item) => !seenIds.has(item.itemId));
+    const seenKeys = getSeenItemKeys();
+    const newItems = pokemonItems.filter((item) => !seenKeys.has(seenItemKey(item.itemId, item.drawKey)));
+    console.log(
+      `[walmart-poll] fetched ${rawProducts.length} products, ${pokemonItems.length} Pokémon-branded, ${newItems.length} new`,
+    );
     if (newItems.length === 0) return;
 
     const channels = listWalmartAlertsChannels();
@@ -116,6 +120,7 @@ async function runPoll(client: Client) {
       // set-walmart-channel has been run) — leave these unseen rather than marking them,
       // so they're still picked up and posted once a channel is configured instead of being
       // silently consumed by whichever poll happens to run first.
+      console.log(`[walmart-poll] ${newItems.length} new item(s) found but no guild has a Walmart alerts channel configured`);
       return;
     }
 
@@ -141,6 +146,9 @@ async function runPoll(client: Client) {
     if (postedItems.length > 0) {
       markItemsSeen(postedItems);
     }
+    console.log(
+      `[walmart-poll] posted ${postedItems.length}/${newItems.length} new item(s) across ${channels.length} channel(s)`,
+    );
   } catch (err) {
     await reportFailure(client, 'walmart-poll', err);
   }

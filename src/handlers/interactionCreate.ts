@@ -10,7 +10,20 @@ import {
 
 const commandMap = new Map(commands.map((c) => [c.data.name, c]));
 
+/** Short identifier for an interaction, for logging. */
+function describeInteraction(interaction: Interaction): string {
+  if (interaction.isChatInputCommand()) return `/${interaction.commandName}`;
+  if (interaction.isButton() || interaction.isModalSubmit()) return interaction.customId;
+  return interaction.type.toString();
+}
+
 export async function handleInteraction(interaction: Interaction) {
+  // Autocomplete fires on every keystroke of an autocomplete field, not a deliberate user
+  // action, so it's excluded here to avoid flooding the logs.
+  if (!interaction.isAutocomplete()) {
+    console.log(`[interaction] ${describeInteraction(interaction)} by ${interaction.user.tag} in guild ${interaction.guildId}`);
+  }
+
   try {
     if (interaction.isChatInputCommand()) {
       const command = commandMap.get(interaction.commandName);
@@ -51,7 +64,7 @@ export async function handleInteraction(interaction: Interaction) {
       return;
     }
   } catch (err) {
-    console.error('Error handling interaction:', err);
+    console.error(`[interaction] ${describeInteraction(interaction)} by ${interaction.user.tag} in guild ${interaction.guildId} failed:`, err);
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
       await interaction.reply({ content: 'Something went wrong running that.', ephemeral: true }).catch(() => {});
     }
