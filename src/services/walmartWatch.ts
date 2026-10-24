@@ -5,6 +5,9 @@ export interface WalmartSeenItem {
   title: string;
   url: string;
   drawKey: string;
+  // Walmart's raw "Drawing ..." badge text, if any — display-only (thread titles), not part of
+  // any key: drawKey is the stable (date-based) identity, this is just the nicest text we saw.
+  slaText?: string;
 }
 
 export interface WalmartDrawRow {

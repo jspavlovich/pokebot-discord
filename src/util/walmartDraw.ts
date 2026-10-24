@@ -1,10 +1,15 @@
 /**
- * Parsing/formatting for Walmart's "Drawing starts" badge text (e.g. "Oct 07, 2:00pm PDT").
- * That string is marketing copy Walmart controls, not a stable API contract, so this is
- * deliberately best-effort: `drawThreadTitle` never throws, it just falls back to echoing the
- * raw text if the format doesn't match what we've seen. Converts to Eastern for the title to
- * match how every other thread in this bot expresses time, even though Walmart's own badge is
- * in Pacific.
+ * Parsing/formatting for Walmart's draw-related badge text (e.g. "Oct 07, 2:00pm PDT"). That
+ * string is marketing copy Walmart controls, not a stable API contract, so this is deliberately
+ * best-effort: nothing here throws, it just falls back to echoing the raw text if the format
+ * doesn't match what we've seen. Converts to Eastern for thread titles to match how every other
+ * thread in this bot expresses time, even though Walmart's own badge is in Pacific.
+ *
+ * Walmart reuses the same badge slot for two different phases of one drawing, with different
+ * wording *and* a different instant: "Drawing entry window" + a start(-end) time before the draw,
+ * then "Drawing results by" + a single deadline time once it's running. `extractDrawDateKey`
+ * exists because of that: the raw text can't be used as a stable identity for one drawing since
+ * it changes mid-event, but the calendar date usually doesn't.
  */
 
 const MONTHS: Record<string, number> = {
@@ -39,12 +44,29 @@ const US_ZONE_OFFSET_HOURS: Record<string, number> = {
 
 // Walmart sometimes gives a single time ("2:00pm PDT") and sometimes a window
 // ("2:00pm - 3:00pm PDT") — the trailing end time, if present, is ignored; only the start matters.
-const SLA_TEXT_PATTERN =
+const ABSOLUTE_SLA_PATTERN =
   /^([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{1,2}):(\d{2})\s*([AaPp][Mm])(?:\s*-\s*\d{1,2}:\d{2}\s*[AaPp][Mm])?\s+([A-Za-z]{2,5})$/;
 
+// The relative shape Walmart's badge switches to once a drawing is close/active, in place of a
+// month/day — same time(-range) + zone suffix otherwise.
+const RELATIVE_SLA_PATTERN =
+  /^(Today|Tomorrow)\s*,?\s*(\d{1,2}):(\d{2})\s*([AaPp][Mm])(?:\s*-\s*\d{1,2}:\d{2}\s*[AaPp][Mm])?\s+([A-Za-z]{2,5})$/i;
+
+function to24Hour(hourStr: string, ampm: string): number {
+  let hour = Number(hourStr) % 12;
+  if (ampm.toLowerCase() === 'pm') hour += 12;
+  return hour;
+}
+
+/** The (year, month, day) a UTC instant falls on in a zone at a fixed offset (per US_ZONE_OFFSET_HOURS). */
+function zonedDateParts(ms: number, offsetHours: number): { year: number; month: number; day: number } {
+  const local = new Date(ms + offsetHours * 60 * 60 * 1000);
+  return { year: local.getUTCFullYear(), month: local.getUTCMonth(), day: local.getUTCDate() };
+}
+
 /** Parses a "Mon DD, H:MMam/pm TZ" badge string into an epoch ms instant, or null if unrecognized. */
-function parseDrawStart(slaText: string, now: number): number | null {
-  const match = slaText.trim().match(SLA_TEXT_PATTERN);
+function parseAbsoluteDrawInstant(slaText: string, now: number): number | null {
+  const match = slaText.match(ABSOLUTE_SLA_PATTERN);
   if (!match) return null;
   const [, monthAbbr, dayStr, hourStr, minuteStr, ampm, tzAbbr] = match;
   const month = MONTHS[monthAbbr.toLowerCase()];
@@ -53,8 +75,7 @@ function parseDrawStart(slaText: string, now: number): number | null {
 
   const day = Number(dayStr);
   const minute = Number(minuteStr);
-  let hour = Number(hourStr) % 12;
-  if (ampm.toLowerCase() === 'pm') hour += 12;
+  const hour = to24Hour(hourStr, ampm);
 
   const nowYear = new Date(now).getUTCFullYear();
   const asUtcMs = (year: number) => Date.UTC(year, month, day, hour, minute) - offsetHours * 60 * 60 * 1000;
@@ -66,6 +87,50 @@ function parseDrawStart(slaText: string, now: number): number | null {
     candidate = asUtcMs(nowYear + 1);
   }
   return candidate;
+}
+
+/**
+ * Parses a "Today"/"Tomorrow, H:MMam/pm TZ" badge string into an epoch ms instant, or null if
+ * unrecognized. "Today"/"Tomorrow" is resolved against the zone named in the badge, not the poll
+ * server's own clock — the badge's zone is what Walmart means by "today" here.
+ */
+function parseRelativeDrawInstant(slaText: string, now: number): number | null {
+  const match = slaText.match(RELATIVE_SLA_PATTERN);
+  if (!match) return null;
+  const [, dayWord, hourStr, minuteStr, ampm, tzAbbr] = match;
+  const offsetHours = US_ZONE_OFFSET_HOURS[tzAbbr.toUpperCase()];
+  if (offsetHours === undefined) return null;
+
+  const { year, month, day } = zonedDateParts(now, offsetHours);
+  const dayOffset = dayWord.toLowerCase() === 'tomorrow' ? 1 : 0;
+  const minute = Number(minuteStr);
+  const hour = to24Hour(hourStr, ampm);
+  return Date.UTC(year, month, day + dayOffset, hour, minute) - offsetHours * 60 * 60 * 1000;
+}
+
+/** Parses either badge shape into an epoch ms instant, or null if neither matches. */
+function parseDrawInstant(slaText: string, now: number): number | null {
+  const text = slaText.trim();
+  return parseAbsoluteDrawInstant(text, now) ?? parseRelativeDrawInstant(text, now);
+}
+
+const DRAW_DATE_KEY_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/**
+ * Resolves a badge string to the calendar date (Pacific, "YYYY-MM-DD") its drawing falls on, or
+ * null if the text doesn't match a known shape. Use this as the dedup/grouping key instead of
+ * the raw badge text — see the file header for why. Pacific rather than Eastern because that's
+ * the zone actually printed on the badge; Eastern is only this bot's display preference for the
+ * thread title.
+ */
+export function extractDrawDateKey(slaText: string, now: number = Date.now()): string | null {
+  const instant = parseDrawInstant(slaText, now);
+  return instant === null ? null : DRAW_DATE_KEY_FORMAT.format(instant);
 }
 
 const TITLE_DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
@@ -105,6 +170,6 @@ function formatEasternTitle(startMs: number): string {
  * echoing it verbatim so posting still works rather than failing the whole poll over a title.
  */
 export function drawThreadTitle(slaText: string, now: number = Date.now()): string {
-  const startMs = parseDrawStart(slaText, now);
+  const startMs = parseDrawInstant(slaText, now);
   return startMs === null ? `Walmart Draw: ${slaText}` : formatEasternTitle(startMs);
 }

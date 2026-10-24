@@ -9,7 +9,7 @@ import {
   WalmartSeenItem,
 } from '../services/walmartWatch';
 import { reportFailure } from '../util/failureAlerts';
-import { drawThreadTitle } from '../util/walmartDraw';
+import { drawThreadTitle, extractDrawDateKey } from '../util/walmartDraw';
 
 const WALMART_URL = 'https://www.walmart.com/shop/collectibles/draw';
 const POLL_INTERVAL_MS = 60 * 60 * 1000;
@@ -206,8 +206,12 @@ async function postDrawGroup(
     // create a fresh one (createDrawThreadRecord upserts) rather than silently dropping the alert.
   }
 
+  const title =
+    drawKey === NO_DRAW_DATE_KEY
+      ? 'Walmart Draw: date TBD'
+      : drawThreadTitle(items[0]?.slaText ?? drawKey);
   const thread = await forum.threads.create({
-    name: drawKey === NO_DRAW_DATE_KEY ? 'Walmart Draw: date TBD' : drawThreadTitle(drawKey),
+    name: title,
     message: { content },
   });
   createDrawThreadRecord(guildId, drawKey, thread.id);
@@ -310,10 +314,19 @@ function toSeenItem(product: RawProduct): WalmartSeenItem | null {
   const title = typeof product.name === 'string' ? product.name.trim() : '';
   if (!itemId || !title) return null;
 
+  const slaText = extractDrawSlaText(product);
+  // drawKey is the calendar date the drawing falls on, not the raw badge text — see
+  // walmartDraw.ts's header for why the raw text can't be used as a stable key. Text that
+  // doesn't match either known shape falls back to itself, same as the pre-date-key behavior,
+  // so at least items with a genuinely novel format still dedup/group consistently with
+  // themselves rather than all colliding into the no-badge bucket.
+  const drawKey = slaText === undefined ? NO_DRAW_DATE_KEY : extractDrawDateKey(slaText) ?? slaText;
+
   return {
     itemId,
     title,
     url: toAbsoluteUrl(product.canonicalUrl),
-    drawKey: extractDrawSlaText(product) ?? NO_DRAW_DATE_KEY,
+    drawKey,
+    slaText,
   };
 }
