@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config";
+import { extractDrawDateKey } from "../util/walmartDraw";
 
 const dir = path.dirname(config.databasePath);
 if (!fs.existsSync(dir)) {
@@ -12,7 +13,7 @@ export const db = new Database(config.databasePath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 const currentVersion = db.pragma("user_version", { simple: true }) as number;
 
 // v2: retailer / location name / role label need case-insensitive matching (COLLATE NOCASE)
@@ -66,6 +67,74 @@ if (currentVersion > 0 && currentVersion < 8) {
       SELECT item_id, title, url, draw_key, first_seen_at FROM walmart_seen_items;
     DROP TABLE walmart_seen_items;
     ALTER TABLE walmart_seen_items_v8 RENAME TO walmart_seen_items;
+  `);
+}
+
+// v9: draw_key's meaning changes from "Walmart's raw badge text" to "the calendar date (Pacific)
+// that drawing falls on". Walmart reuses the same badge slot across a drawing's lifecycle with
+// different wording *and* a different instant ("Drawing entry window" + a start time, then later
+// "Drawing results by" + a deadline time for the same event) — the raw text was never a stable
+// identity for one drawing, which is what let one drawing get split into two seen-item rows / two
+// forum threads. Re-key existing rows through the same date parser used going forward via a
+// table rebuild (not an in-place UPDATE) because two old rows can collapse onto the same new key
+// — exactly the bug being fixed — which an UPDATE would hit as a primary-key conflict; rebuilding
+// oldest-first with INSERT OR IGNORE keeps the earliest of any such pair and drops the later
+// duplicate.
+if (currentVersion > 0 && currentVersion < 9) {
+  const reKeyDrawKey = (oldKey: string): string => extractDrawDateKey(oldKey) ?? oldKey;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS walmart_seen_items_v9 (
+      item_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      draw_key TEXT NOT NULL,
+      first_seen_at INTEGER NOT NULL,
+      PRIMARY KEY (item_id, draw_key)
+    );
+  `);
+  const seenItemRows = db
+    .prepare("SELECT item_id, title, url, draw_key, first_seen_at FROM walmart_seen_items ORDER BY first_seen_at ASC")
+    .all() as { item_id: string; title: string; url: string; draw_key: string; first_seen_at: number }[];
+  const insertSeenItemV9 = db.prepare(
+    `INSERT OR IGNORE INTO walmart_seen_items_v9 (item_id, title, url, draw_key, first_seen_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+  db.transaction(() => {
+    for (const row of seenItemRows) {
+      insertSeenItemV9.run(row.item_id, row.title, row.url, reKeyDrawKey(row.draw_key), row.first_seen_at);
+    }
+  })();
+  db.exec(`
+    DROP TABLE walmart_seen_items;
+    ALTER TABLE walmart_seen_items_v9 RENAME TO walmart_seen_items;
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS walmart_draws_v9 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      draw_key TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(guild_id, draw_key)
+    );
+  `);
+  const drawRows = db
+    .prepare("SELECT guild_id, draw_key, thread_id, created_at FROM walmart_draws ORDER BY created_at ASC")
+    .all() as { guild_id: string; draw_key: string; thread_id: string; created_at: number }[];
+  const insertDrawV9 = db.prepare(
+    `INSERT OR IGNORE INTO walmart_draws_v9 (guild_id, draw_key, thread_id, created_at)
+     VALUES (?, ?, ?, ?)`,
+  );
+  db.transaction(() => {
+    for (const row of drawRows) {
+      insertDrawV9.run(row.guild_id, reKeyDrawKey(row.draw_key), row.thread_id, row.created_at);
+    }
+  })();
+  db.exec(`
+    DROP TABLE walmart_draws;
+    ALTER TABLE walmart_draws_v9 RENAME TO walmart_draws;
   `);
 }
 
