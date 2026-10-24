@@ -40,7 +40,7 @@ interface RawProduct {
   canonicalUrl?: unknown;
   badges?: {
     groups?: {
-      members?: { key?: unknown; slaText?: unknown }[];
+      members?: { key?: unknown; slaText?: unknown; text?: unknown }[];
     }[];
   };
 }
@@ -286,8 +286,15 @@ function isPokemonBranded(product: RawProduct): boolean {
   return normalizeAscii(brand).includes('pokemon') || normalizeAscii(name).includes('pokemon');
 }
 
-/** The "Drawing starts <date>" badge text, if this item has one. */
-function extractDrawSlaText(product: RawProduct): string | undefined {
+interface DrawBadge {
+  slaText: string;
+  // The badge's own label, e.g. "Drawing entry window " or "Drawing results by " — distinguishes
+  // whether entry is still open or the drawing has already closed and is just awaiting results.
+  phaseLabel: string;
+}
+
+/** The DRAW_ELIGIBLE badge's text label + slaText, if this item has one. */
+function extractDrawBadge(product: RawProduct): DrawBadge | undefined {
   const groups = product.badges?.groups;
   if (!Array.isArray(groups)) return undefined;
   for (const group of groups) {
@@ -295,11 +302,26 @@ function extractDrawSlaText(product: RawProduct): string | undefined {
     if (!Array.isArray(members)) continue;
     for (const member of members) {
       if (member?.key === 'DRAW_ELIGIBLE' && typeof member?.slaText === 'string' && member.slaText.trim()) {
-        return member.slaText.trim();
+        return {
+          slaText: member.slaText.trim(),
+          phaseLabel: typeof member?.text === 'string' ? member.text : '',
+        };
       }
     }
   }
   return undefined;
+}
+
+/**
+ * Once a drawing closes, Walmart swaps the badge from the entry window (while you can still
+ * enter) to a "results by" deadline for when winners get announced — and that results date
+ * doesn't reliably land on the same day as the drawing itself, so unlike the two phases this bot
+ * otherwise reconciles via extractDrawDateKey, this one can't be collapsed back to the original
+ * drawing's date. By this phase entry is already closed — nothing actionable left for users — so
+ * these items are dropped entirely rather than risk a second, differently-dated alert.
+ */
+function isClosedDraw(badge: DrawBadge): boolean {
+  return /results/i.test(badge.phaseLabel);
 }
 
 function toAbsoluteUrl(canonicalUrl: unknown): string {
@@ -308,13 +330,19 @@ function toAbsoluteUrl(canonicalUrl: unknown): string {
   return path.startsWith('http') ? path : `https://www.walmart.com${path}`;
 }
 
-/** Returns null (rather than throwing) for a malformed entry, so one bad item doesn't drop the whole poll. */
+/**
+ * Returns null for a malformed entry or a closed drawing, so one bad item doesn't drop the whole
+ * poll and closed drawings don't get posted at all (see isClosedDraw).
+ */
 function toSeenItem(product: RawProduct): WalmartSeenItem | null {
   const itemId = String(product.id ?? '').trim();
   const title = typeof product.name === 'string' ? product.name.trim() : '';
   if (!itemId || !title) return null;
 
-  const slaText = extractDrawSlaText(product);
+  const badge = extractDrawBadge(product);
+  if (badge && isClosedDraw(badge)) return null;
+
+  const slaText = badge?.slaText;
   // drawKey is the calendar date the drawing falls on, not the raw badge text — see
   // walmartDraw.ts's header for why the raw text can't be used as a stable key. Text that
   // doesn't match either known shape falls back to itself, same as the pre-date-key behavior,
